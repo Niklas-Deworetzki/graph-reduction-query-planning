@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar, Iterator, Optional
 from collections.abc import Callable
 from pathlib import Path
 import json
@@ -18,27 +18,30 @@ from .util import add_suffix, binsearch_range
 ## This is a kind of modified suffix array - a "pruned" SA if you like
 
 class Index:
-    dir_suffix: str = '.indexes'
+    dir_suffix: ClassVar[str] = '.indexes'
+
     corpus: Corpus
     template: Template
-    smallsets: IntArray | None
-    bigsets: IntBytesMap | None
+    smallsets: Optional[IntArray]
+    bigsets: Optional[IntBytesMap]
     path: Path
 
     config: dict[str, int]
+
+    @staticmethod
+    def init_io[X](action: Callable[[], X]) -> Optional[X]:
+        try:
+            return action()
+        except FileNotFoundError:
+            return None
 
     def __init__(self, corpus: Corpus, template: Template) -> None:
         self.corpus = corpus
         self.template = template
         self.path = self.indexpath(corpus, template)
-        try:
-            self.smallsets = IntArray(self.path)
-        except FileNotFoundError:
-            self.smallsets = None
-        try:
-            self.bigsets = IntBytesMap(self.path)
-        except FileNotFoundError:
-            self.bigsets = None
+
+        self.smallsets = Index.init_io(lambda: IntArray(self.path))
+        self.bigsets = Index.init_io(lambda: IntBytesMap(self.path))
         if self.smallsets is None and self.bigsets is None:
             raise FileNotFoundError(f"Index does not exist: {self.path}")
 
@@ -63,7 +66,6 @@ class Index:
 
     def __exit__(self, *_: Any) -> None:
         self.close()
-
 
     def close(self) -> None:
         if self.smallsets is not None:
@@ -134,6 +136,15 @@ class Index:
             return BinaryIndex(corpus, template)
         else:
             raise ValueError(f"Cannot handle indexes of length {len(template)}: {template}")
+
+    @staticmethod
+    def indexes_for(corpus: Corpus) -> Iterator['Index']:
+        basepath = corpus.path.with_suffix(Index.dir_suffix)
+        for index_root in basepath.iterdir():
+            try:
+                yield Index.get(corpus, Template.parse(index_root.name))
+            except (ValueError, FileNotFoundError):
+                pass
 
 
 class UnaryIndex(Index):
