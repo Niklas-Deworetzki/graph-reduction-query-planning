@@ -8,8 +8,8 @@ from pyroaring import BitMap
 from query import *
 from korp.corpus import Corpus
 from korp.disk import SymbolArray
-from korp.index import Index, UnaryIndex
-from korp.literals import Instance, Template
+from korp.index import BinaryIndex, Index, UnaryIndex
+from korp.literals import Instance, Template, TemplateLiteral
 from korp.util import FValue, Feature
 
 
@@ -25,11 +25,25 @@ def fold[X](xs: List[X], operator: Callable[[X, X], X]) -> X:
 
 
 class IndexMatcher:
+    unary_indexes: dict[TemplateLiteral, Index]
+    binary_indexes: dict[Tuple[TemplateLiteral, TemplateLiteral], Index]
 
     def __init__(self, corpus: Corpus):
-        corpus.path.with_suffix(Index.dir_suffix)
+        self.unary_indexes = dict()
+        self.binary_indexes = dict()
 
-        Index.get(corpus, Template())
+        for index in Index.indexes_for(corpus):
+            match key := index.template.template:
+                case 1:
+                    self.unary_indexes[key[0]] = index
+                case 2:
+                    self.binary_indexes[key] = index
+
+        all_binary_keys = {tl for tpl in self.binary_indexes.keys() for tl in tpl}
+        assert all_binary_keys.issubset(self.unary_indexes.keys())
+
+    def perform_lookup(self, lookup: Lookup) -> BitMap:
+        pass  # TODO: Use edge cover to find optimal set of indexes to use.
 
 
 class Evaluator:
