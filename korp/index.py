@@ -56,7 +56,7 @@ class Index:
             return self.smallsets.getconfig()
 
     def __str__(self) -> str:
-        return f'{type(self)}:{self.template}'
+        return f'{type(self).__name__}:{self.template}'
 
     def __len__(self) -> int:
         return self.config['size']
