@@ -1,4 +1,5 @@
 import logging
+import time
 import math
 import sys
 from typing import Callable
@@ -13,6 +14,29 @@ from korp.literals import Instance, Template, TemplateLiteral
 from korp.util import FValue, Feature
 
 
+class RelativeTimeFormatter(logging.Formatter):
+    def __init__(self, start_nanos: int = time.perf_counter_ns()):
+        super().__init__(fmt="[+%(relative_us)6d µs] %(levelname)s: %(message)s")
+        self.start_nanos = start_nanos
+
+    def format(self, record):
+        elapsed = time.perf_counter_ns() - self.start_nanos
+        record.relative_us = elapsed // 1000
+        return super().format(record)
+
+
+def make_logger(name: str) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler()
+    formatter = RelativeTimeFormatter()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
+
+
 def index_of_match[T](elements: List[T], predicate: Callable[[T], bool]) -> int:
     return next(i for i, e in elements if predicate(e))
 
@@ -24,26 +48,55 @@ def fold[X](xs: List[X], operator: Callable[[X, X], X]) -> X:
     return res
 
 
+LOGGER = make_logger(__name__)
+
+
 class IndexMatcher:
-    unary_indexes: dict[TemplateLiteral, Index]
+    unary_indexes: dict[Feature, Index]
     binary_indexes: dict[Tuple[TemplateLiteral, TemplateLiteral], Index]
 
     def __init__(self, corpus: Corpus):
+        self.corpus = corpus
         self.unary_indexes = dict()
         self.binary_indexes = dict()
 
         for index in Index.indexes_for(corpus):
-            match key := index.template.template:
+            LOGGER.info(f'Discovered index {index}')
+            key = index.template.template
+            match len(key):
                 case 1:
-                    self.unary_indexes[key[0]] = index
+                    assert key[0].offset == 0, 'Unary indexes are expected to have no offset!'
+                    self.unary_indexes[key[0].feature] = index
                 case 2:
                     self.binary_indexes[key] = index
 
-        all_binary_keys = {tl for tpl in self.binary_indexes.keys() for tl in tpl}
-        assert all_binary_keys.issubset(self.unary_indexes.keys())
+        for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
+            LOGGER.warning(
+                f'No index for feature {unresolved_feature.decode()}. Searching for it will not be possible.')
 
-    def perform_lookup(self, lookup: Lookup) -> BitMap:
-        pass  # TODO: Use edge cover to find optimal set of indexes to use.
+    def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
+        # TODO: Use edge cover to find optimal set of indexes to use.
+
+        unary_index_lookups = []
+        for atom in lookup.atoms:
+            index = self.unary_indexes[Feature(atom.key.encode())]
+            symbol = self.corpus.get_symbol(
+                Feature(atom.key.encode()),
+                FValue(atom.value.encode())
+            )
+
+            bm = BitMap()
+            bm |= index.lookup_smallset(symbol, symbol)
+            bm |= index.lookup_bigset(symbol, symbol)
+            if atom.relative_position:
+                bm = bm.shift(atom.relative_position)
+            unary_index_lookups.append(bm)
+
+        unary_index_lookups.sort(key=len)  # Start with smallest to reduce execution time.
+        result = fold(unary_index_lookups, lambda a, b: a & b)
+        if offset:
+            result = result.shift(offset)
+        return result
 
 
 class Evaluator:
@@ -54,22 +107,10 @@ class Evaluator:
     }
 
     corpus: Corpus
-    indexed_features: dict[str, UnaryIndex]
 
     def __init__(self, corpus: Corpus):
         self.corpus = corpus
-        self.indexed_features = {}
-
-        for feature in corpus.features():
-            str_feature = feature.decode()
-            try:
-                self.indexed_features[str_feature] = UnaryIndex(
-                    corpus,
-                    Template.parse(f'{str_feature}:0')
-                )
-                print(f'Read index for feature {str_feature}.')
-            except FileNotFoundError:
-                print(f'No index for feature {str_feature}. Searching for it will not be possible.', file=sys.stderr)
+        self.index_manager = IndexMatcher(corpus)
 
     def eval_next_in_list(self, elements: List[Node]) -> Node:
         target = min(elements, key=lambda e: e.cost if not e.is_evaluated() else math.inf)
@@ -110,22 +151,12 @@ class Evaluator:
                     self.eval_step(node.element)
 
             case Lookup():
-                unary_index_lookups = []
-                for atom in node.atoms:
-                    index = self.indexed_features[atom.key]
-                    symbol = self.corpus.get_symbol(
-                        Feature(atom.key.encode()),
-                        FValue(atom.value.encode())
-                    )
-
-                    bm = BitMap()
-                    unary_index_lookups.append(bm)
-                    bm |= index.lookup_smallset(symbol, symbol)
-                    bm |= index.lookup_bigset(symbol, symbol)
-                    if atom.relative_position:
-                        bm.shift(atom.relative_position)
-
-                node.value = fold(sorted(unary_index_lookups, key=len), lambda a, b: a & b)
+                LOGGER.info(f'Starting lookup for {len(node.atoms)} features.')
+                min_off = min(atom.relative_position for atom in node.atoms)
+                max_off = max(atom.relative_position for atom in node.atoms)
+                lookup_positions = self.index_manager.perform_lookup(node, offset=min_off)
+                node.value = BucketRangeSet({max_off - min_off: lookup_positions})
+                LOGGER.info(f'Lookup finished.')
 
             case _:
                 raise NotImplementedError()
