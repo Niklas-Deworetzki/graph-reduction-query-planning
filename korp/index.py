@@ -80,9 +80,8 @@ class Index:
             return BitMap()
         result = BitMap()
         for start, end in ranges:
-            small = self.lookup_smallset(start, end)
-            big = self.lookup_bigset(start, end)
-            result |= small | big
+            result |= self.lookup_smallset(start, end)
+            result |= self.lookup_bigset(start, end)
         if offset:
             result = result.shift(-offset)
         return result
@@ -141,8 +140,11 @@ class Index:
     def indexes_for(corpus: Corpus) -> Iterator['Index']:
         basepath = corpus.path.with_suffix(Index.dir_suffix)
         for index_root in basepath.iterdir():
+            index_name = index_root.name
+            index_name.find('+s')
+
             try:
-                yield Index.get(corpus, Template.parse(index_root.name))
+                yield Index.get(corpus, Template.parse(corpus, index_root.name))
             except (ValueError, FileNotFoundError):
                 pass
 
