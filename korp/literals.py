@@ -1,14 +1,57 @@
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NewType
 
+from .corpus import Corpus
 from .disk import Symbol, SymbolList, SymbolRange
-from .util import Feature, check_feature
+from .util import FValue, Feature, check_feature
 
 ################################################################################
 ## Literals, templates and instances
 
 Instance = NewType('Instance', Sequence[Symbol | SymbolRange | SymbolList])
+
+@dataclass(frozen=True, order=True)
+class KnownLiteral:
+    negative: bool
+    offset: int
+    feature: Feature
+    value: Symbol | SymbolRange | SymbolList
+    corpus: Corpus = field(compare=False)
+
+    def __post_init__(self) -> None:
+        check_feature(self.feature)
+
+    def __str__(self) -> str:
+        if isinstance(self.value, SymbolRange):
+            value0 = self.corpus.lookup_symbol(self.feature, self.value[0]).decode()
+            value1 = self.corpus.lookup_symbol(self.feature, self.value[1]).decode()
+            return f"{self.feature.decode()}:{self.offset}{'#' if self.negative else '='}{value0}-{value1}"
+        elif isinstance(self.value, SymbolList):
+            value0 = self.corpus.lookup_symbol(self.feature, self.value.symbols[0]).decode()
+            value1 = self.corpus.lookup_symbol(self.feature, self.value.symbols[-1]).decode()
+            return f"{self.feature.decode()}:{self.offset}{'#' if self.negative else '='}{value0}...{value1}"
+        else:
+            value = self.corpus.lookup_symbol(self.feature, self.value).decode()
+            return f"{self.feature.decode()}:{self.offset}{'#' if self.negative else '='}{value}"
+
+    @staticmethod
+    def parse(corpus: Corpus, litstr: str) -> 'KnownLiteral':
+        try:
+            featstr, rest = litstr.split(':')
+            feature = Feature(featstr.lower().encode())
+            check_feature(feature)
+            try:
+                offset, valstr = rest.split('=')
+                negative = False
+            except ValueError:
+                offset, valstr = rest.split('#')
+                negative = True
+            value = FValue(valstr.encode())
+            symbol = corpus.get_symbol(feature, value)
+            return KnownLiteral(negative, int(offset), feature, symbol, corpus)
+        except (ValueError, AssertionError):
+            raise ValueError(f"Ill-formed literal: {litstr}")
 
 
 @dataclass(frozen=True, order=True)
@@ -36,19 +79,22 @@ class TemplateLiteral:
 class Template:
     size: int  # Having 'size' first means shorter templates are ordered before longer
     template: tuple[TemplateLiteral, ...]
+    literals: tuple[KnownLiteral,...]
 
-    def __init__(self, template: Sequence[TemplateLiteral]) -> None:
+    def __init__(self, template: Sequence[TemplateLiteral], literals: Sequence[KnownLiteral]):
         # We need to use __setattr__ because the class is frozen:
         object.__setattr__(self, 'template', tuple(template))
+        object.__setattr__(self, 'literals', tuple(literals))
         object.__setattr__(self, 'size', len(self.template))
         try:
-            assert self.template == tuple(sorted(set(self.template))), f"Unsorted template"
-            assert len(self.template) > 0, f"Empty template"
+            assert self.template == tuple(sorted(set(self.template))), "Unsorted template"
+            assert self.literals == tuple(sorted(set(self.literals))), "Unsorted template"
+            assert len(self.template) > 0, "Empty template"
         except AssertionError:
             raise ValueError(f"Invalid template: {self}")
 
     def __str__(self) -> str:
-        return '+'.join(map(str, self.template))
+        return '+'.join(map(str, self.template + self.literals))
 
     def __iter__(self) -> Iterator[TemplateLiteral]:
         return iter(self.template)
@@ -57,13 +103,15 @@ class Template:
         return self.size
 
     @staticmethod
-    def parse(template_str: str) -> 'Template':
+    def parse(corpus: Corpus, template_str: str) -> 'Template':
         try:
-            return Template([
-                TemplateLiteral.parse(litstr)
-                for litstr in template_str.split('+')
-            ])
+            literals: list[KnownLiteral] = []
+            template: list[TemplateLiteral] = []
+            for litstr in template_str.split('+'):
+                try:
+                    literals.append(KnownLiteral.parse(corpus, litstr))
+                except ValueError:
+                    template.append(TemplateLiteral.parse(litstr))
+            return Template(template, literals)
         except (ValueError, AssertionError):
-            raise ValueError(
-                "Ill-formed template - it should be on the form pos:0 or word:0+pos:2: " + template_str
-            )
+            raise ValueError(f"Ill-formed template: {template_str}")
