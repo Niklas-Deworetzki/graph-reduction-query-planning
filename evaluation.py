@@ -2,6 +2,10 @@ import logging
 import time
 import math
 import sys
+
+import networkx as nx
+
+from collections import defaultdict
 from typing import Callable
 
 from pyroaring import BitMap
@@ -53,7 +57,7 @@ LOGGER = make_logger(__name__)
 
 class IndexMatcher:
     unary_indexes: dict[Feature, Index]
-    binary_indexes: dict[Tuple[TemplateLiteral, TemplateLiteral], Index]
+    binary_indexes: dict[Tuple[Feature, int, Feature], Index] = dict()
 
     def __init__(self, corpus: Corpus):
         self.corpus = corpus
@@ -61,22 +65,86 @@ class IndexMatcher:
         self.binary_indexes = dict()
 
         for index in Index.indexes_for(corpus):
-            LOGGER.info(f'Discovered index {index}')
             key = index.template.template
             match len(key):
                 case 1:
-                    assert key[0].offset == 0, 'Unary indexes are expected to have no offset!'
+                    assert key[0].offset == 0, 'Feature in unary index is expected to be 0!'
                     self.unary_indexes[key[0].feature] = index
                 case 2:
-                    self.binary_indexes[key] = index
+                    assert key[0].offset == 0, 'Offset of first feature in binary index is expected to be 0!'
+                    assert key[1].offset >= 0, 'Second feature in binary index must be positive!'
+                    self.binary_indexes[(key[0].feature, key[1].offset, key[1].feature)] = index
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
             LOGGER.warning(
                 f'No index for feature {unresolved_feature.decode()}. Searching for it will not be possible.')
 
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
-        # TODO: Use edge cover to find optimal set of indexes to use.
+        feature_values = {  # Lookup table for encoded features and values.
+            TemplateLiteral(
+                atom.relative_position - offset,  # Normalize offsets for request.
+                Feature(atom.key.encode())
+            ): FValue(atom.value.encode())
+            for atom in lookup.atoms
+        }
 
+        # This helps us find the distance between two features when selecting binary indexes.
+        relevant_feature_offsets: dict[Feature, set[int]] = defaultdict(set)
+        for feature in feature_values.keys():
+            relevant_feature_offsets[feature.feature].add(feature.offset)
+
+        # Graph encoding: Binary indexes are edges between (Feature:Offset) pairs.
+        graph: list[Tuple[TemplateLiteral, TemplateLiteral]] = []
+        for (l_feature, distance, r_feature) in self.binary_indexes.keys():
+            l_offsets = relevant_feature_offsets[l_feature]
+            r_offsets = relevant_feature_offsets[r_feature]
+
+            # See if there are combinations of features with a distance that our index can serve.
+            for l_offset in l_offsets:
+                if l_offset + distance in r_offsets:
+                    graph.append((
+                        TemplateLiteral(l_offset, l_feature),
+                        TemplateLiteral(l_offset + distance, r_feature)
+                    ))
+
+        # Now find the maximal matching, a combination of binary indexes maximizing requested atoms.
+        best_indexes: list[Tuple[TemplateLiteral, TemplateLiteral]] = nx.maximal_matching(nx.Graph(graph))
+        LOGGER.info(f'Decided lookup order: {best_indexes})')
+
+        index_lookups: list[BitMap] = []
+        fulfilled: set[TemplateLiteral] = set()
+        for l_lit, r_lit in best_indexes:
+            # Keep track of which parts we've already fulfilled. We might need to add some unary indexes later.
+            fulfilled.add(l_lit)
+            fulfilled.add(r_lit)
+
+            # Find which index actually serves the requested features with distance.
+            index = self.binary_indexes[(
+                l_lit.feature,
+                r_lit.offset - l_lit.offset,
+                r_lit.feature
+            )]
+
+            # Finally query the index.
+            l_symbol = self.corpus.get_symbol(l_lit.feature, feature_values[l_lit])
+            r_symbol = self.corpus.get_symbol(r_lit.feature, feature_values[r_lit])
+            index_lookups.append(
+                index.search([l_symbol, r_symbol], l_lit.offset)
+            )
+
+        for unfulfilled in feature_values.keys() - fulfilled:
+            index = self.unary_indexes[unfulfilled.feature]
+
+            symbol = self.corpus.get_symbol(unfulfilled.feature, feature_values[unfulfilled])
+            index_lookups.append(
+                index.search([symbol], unfulfilled.offset)
+            )
+
+        index_lookups.sort(key=len)  # Start with smallest to reduce execution time.
+        return fold(index_lookups, lambda a, b: a & b)
+
+    def perform_unary_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
+        LOGGER.info(f'Decided lookup order: {[atom.key for atom in lookup.atoms]})')
         unary_index_lookups = []
         for atom in lookup.atoms:
             index = self.unary_indexes[Feature(atom.key.encode())]
@@ -88,15 +156,13 @@ class IndexMatcher:
             bm = BitMap()
             bm |= index.lookup_smallset(symbol, symbol)
             bm |= index.lookup_bigset(symbol, symbol)
-            if atom.relative_position:
-                bm = bm.shift(atom.relative_position)
+            if atom.relative_position + offset:
+                bm = bm.shift(atom.relative_position + offset)
+            LOGGER.debug(f'{atom} found {len(bm)} results')
             unary_index_lookups.append(bm)
 
         unary_index_lookups.sort(key=len)  # Start with smallest to reduce execution time.
-        result = fold(unary_index_lookups, lambda a, b: a & b)
-        if offset:
-            result = result.shift(offset)
-        return result
+        return fold(unary_index_lookups, lambda a, b: a & b)
 
 
 class Evaluator:
@@ -154,7 +220,7 @@ class Evaluator:
                 LOGGER.info(f'Starting lookup for {len(node.atoms)} features.')
                 min_off = min(atom.relative_position for atom in node.atoms)
                 max_off = max(atom.relative_position for atom in node.atoms)
-                lookup_positions = self.index_manager.perform_lookup(node, offset=min_off)
+                lookup_positions = self.index_manager.perform_unary_lookup(node, offset=min_off)
                 node.value = BucketRangeSet({max_off - min_off: lookup_positions})
                 LOGGER.info(f'Lookup finished.')
 
