@@ -1,7 +1,7 @@
 import math
 from abc import ABC
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional
 
 from sets import BucketRangeSet
 
@@ -19,7 +19,7 @@ class Atom:
 
 class Node(ABC):
     cost: Cost
-    value: Value | None
+    value: Optional[Value]
     _refcount: int
 
     def __post_init__(self):

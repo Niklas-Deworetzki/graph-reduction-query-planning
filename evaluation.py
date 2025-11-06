@@ -63,11 +63,11 @@ class IndexMatcher:
             key = index.template.template
             match len(key):
                 case 1:
-                    assert key[0].offset == 0, 'Feature in unary index is expected to be 0!'
+                    assert key[0].offset == 0, 'Feature in unary index is expected to be at offset 0!'
                     self.unary_indexes[key[0].feature] = index
                 case 2:
                     assert key[0].offset == 0, 'Offset of first feature in binary index is expected to be 0!'
-                    assert key[1].offset >= 0, 'Second feature in binary index must be positive!'
+                    assert key[1].offset >= 0, 'Second feature in binary index cannot be negative!'
                     self.binary_indexes[(key[0].feature, key[1].offset, key[1].feature)] = index
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
@@ -156,8 +156,7 @@ class IndexMatcher:
             bm |= index.lookup_smallset(symbol, symbol)
             bm |= index.lookup_bigset(symbol, symbol)
             if atom.relative_position + offset:
-                bm = bm.shift(atom.relative_position + offset)
-            LOGGER.debug(f'{atom} found {len(bm)} results')
+                bm = bm.shift(-(atom.relative_position + offset))
             unary_index_lookups.append(bm)
 
         unary_index_lookups.sort(key=len)  # Start with smallest to reduce execution time.
@@ -168,7 +167,7 @@ class Evaluator:
     set_operations = {
         Conjunction: lambda a, b: a & b,
         Disjunction: lambda a, b: a | b,
-        Sequence: lambda a, b: a * b,
+        Sequence: lambda a, b: a.join(b),
     }
 
     corpus: Corpus
@@ -216,12 +215,12 @@ class Evaluator:
                     self.eval_step(node.element)
 
             case Lookup():
-                LOGGER.info(f'Starting lookup for {len(node.atoms)} features.')
+                LOGGER.debug(f'Starting lookup for {len(node.atoms)} features.')
                 min_off = min(atom.relative_position for atom in node.atoms)
                 max_off = max(atom.relative_position for atom in node.atoms)
-                lookup_positions = self.index_manager.perform_unary_lookup(node, offset=min_off)
+                lookup_positions = self.index_manager.perform_lookup(node, offset=min_off)
                 node.value = BucketRangeSet({max_off - min_off: lookup_positions})
-                LOGGER.info(f'Lookup finished.')
+                LOGGER.debug(f'Lookup finished.')
 
             case _:
                 raise NotImplementedError()
@@ -258,3 +257,15 @@ class Evaluator:
             self.eval_step(node)
 
         return node.deref_value(does_mutate=False)
+
+# max_matching, no weights, lazy fetching
+# [+  6802 µs] INFO: Starting lookup for 4 features.
+# [+  6866 µs] DEBUG: Found 5 applicable indexes.
+# [+  7471 µs] INFO: Decided lookup order: {(TemplateLiteral(offset=0, feature=b'word'), TemplateLiteral(offset=2, feature=b'pos')), (TemplateLiteral(offset=0, feature=b'pos'), TemplateLiteral(offset=1, feature=b'pos'))})
+# [+ 18477 µs] INFO: Lookup finished.
+
+# weighted max matching, weights from eager fetching
+# [+  5112 µs] INFO: Starting lookup for 4 features.
+# [+ 34984 µs] DEBUG: Found 4 applicable indexes.
+# [+ 35868 µs] INFO: Decided lookup order: {(TemplateLiteral(offset=1, feature=b'pos'), TemplateLiteral(offset=0, feature=b'pos')), (TemplateLiteral(offset=0, feature=b'word'), TemplateLiteral(offset=2, feature=b'pos'))})
+# [+ 38497 µs] INFO: Lookup finished.
