@@ -1,21 +1,16 @@
 import logging
 import time
-import math
-import sys
+from collections import defaultdict
+from typing import Callable, Tuple
 
 import networkx as nx
-
-from collections import defaultdict
-from typing import Callable
-
 from pyroaring import BitMap
 
-from query import *
 from korp.corpus import Corpus
-from korp.disk import SymbolArray
-from korp.index import BinaryIndex, Index, UnaryIndex
-from korp.literals import Instance, Template, TemplateLiteral
+from korp.index import Index
+from korp.literals import TemplateLiteral
 from korp.util import FValue, Feature
+from query import *
 
 
 class RelativeTimeFormatter(logging.Formatter):
@@ -94,43 +89,47 @@ class IndexMatcher:
             relevant_feature_offsets[feature.feature].add(feature.offset)
 
         # Graph encoding: Binary indexes are edges between (Feature:Offset) pairs.
-        graph: list[Tuple[TemplateLiteral, TemplateLiteral]] = []
-        for (l_feature, distance, r_feature) in self.binary_indexes.keys():
+        graph = nx.Graph()
+        corpus_size = len(self.corpus)
+        binary_lookups: dict[Tuple[TemplateLiteral, TemplateLiteral], BitMap] = dict()
+        for (l_feature, distance, r_feature), index in self.binary_indexes.items():
             l_offsets = relevant_feature_offsets[l_feature]
             r_offsets = relevant_feature_offsets[r_feature]
 
             # See if there are combinations of features with a distance that our index can serve.
             for l_offset in l_offsets:
                 if l_offset + distance in r_offsets:
-                    graph.append((
-                        TemplateLiteral(l_offset, l_feature),
-                        TemplateLiteral(l_offset + distance, r_feature)
-                    ))
+                    l_lit = TemplateLiteral(l_offset, l_feature)
+                    r_lit = TemplateLiteral(l_offset + distance, r_feature)
 
+                    # Query the index to get edge weight.
+                    l_symbol = self.corpus.get_symbol(l_feature, feature_values[l_lit])
+                    r_symbol = self.corpus.get_symbol(r_feature, feature_values[r_lit])
+                    lookup_result = index.search([l_symbol, r_symbol], l_lit.offset)
+
+                    graph.add_edge(
+                        l_lit,
+                        r_lit,
+                        weight=corpus_size - len(lookup_result)
+                    )
+                    binary_lookups[(l_lit, r_lit)] = lookup_result
+
+        LOGGER.debug(f'Found {len(graph)} applicable indexes.')
         # Now find the maximal matching, a combination of binary indexes maximizing requested atoms.
-        best_indexes: list[Tuple[TemplateLiteral, TemplateLiteral]] = nx.maximal_matching(nx.Graph(graph))
+        best_indexes: list[Tuple[TemplateLiteral, TemplateLiteral]] = nx.max_weight_matching(graph)
         LOGGER.info(f'Decided lookup order: {best_indexes})')
 
         index_lookups: list[BitMap] = []
         fulfilled: set[TemplateLiteral] = set()
-        for l_lit, r_lit in best_indexes:
+        for sel_l, sel_r in best_indexes:
             # Keep track of which parts we've already fulfilled. We might need to add some unary indexes later.
-            fulfilled.add(l_lit)
-            fulfilled.add(r_lit)
+            fulfilled.add(sel_l)
+            fulfilled.add(sel_r)
 
-            # Find which index actually serves the requested features with distance.
-            index = self.binary_indexes[(
-                l_lit.feature,
-                r_lit.offset - l_lit.offset,
-                r_lit.feature
-            )]
+            if sel_l.offset > sel_r.offset:
+                sel_l, sel_r = sel_r, sel_l
 
-            # Finally query the index.
-            l_symbol = self.corpus.get_symbol(l_lit.feature, feature_values[l_lit])
-            r_symbol = self.corpus.get_symbol(r_lit.feature, feature_values[r_lit])
-            index_lookups.append(
-                index.search([l_symbol, r_symbol], l_lit.offset)
-            )
+            index_lookups.append(binary_lookups[(sel_l, sel_r)])
 
         for unfulfilled in feature_values.keys() - fulfilled:
             index = self.unary_indexes[unfulfilled.feature]
