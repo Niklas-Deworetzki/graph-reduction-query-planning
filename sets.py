@@ -1,4 +1,5 @@
 import collections
+from collections import defaultdict
 from typing import Dict, Iterator, Tuple
 
 from pyroaring import BitMap
@@ -9,11 +10,48 @@ type Range = Tuple[int, int]
 class BucketRangeSet(collections.abc.Set[Range]):
     buckets: Dict[int, BitMap]
 
+    @staticmethod
+    def of(s: set[Range]) -> 'BucketRangeSet':
+        data = defaultdict(BitMap)
+        for (x, y) in s:
+            data[y - x].add(x)
+        return BucketRangeSet(data)
+
     def __init__(self, buckets: Dict[int, BitMap]):
         self.buckets = buckets
 
     def copy(self) -> 'BucketRangeSet':
         buckets = {key: BitMap(value) for key, value in self.buckets}
+        return BucketRangeSet(buckets)
+
+    def conjunction(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
+        common_keys = self.buckets.keys() & other.buckets.keys()
+        buckets = {
+            key: self.buckets[key] & other.buckets[key]
+            for key in common_keys
+        }
+        return BucketRangeSet(buckets)
+
+    def disjunction(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
+        common_keys = self.buckets.keys() & other.buckets.keys()
+        buckets = {
+            key: self.buckets[key] | other.buckets[key]
+            for key in common_keys
+        }
+        for key in (self.buckets.keys() - common_keys):
+            buckets[key] = self.buckets[key]
+        for key in (other.buckets.keys() - common_keys):
+            buckets[key] = other.buckets[key]
+        return BucketRangeSet(buckets)
+
+    def difference(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
+        common_keys = self.buckets.keys() & other.buckets.keys()
+        buckets = {
+            key: self.buckets[key] - other.buckets[key]
+            for key in common_keys
+        }
+        for key in (self.buckets.keys() - common_keys):
+            buckets[key] = self.buckets[key]
         return BucketRangeSet(buckets)
 
     def join(self, other: 'BucketRangeSet', distance: int = 0) -> 'BucketRangeSet':
@@ -23,7 +61,7 @@ class BucketRangeSet(collections.abc.Set[Range]):
             expected_endpoints = self_value.shift(offset)
 
             for other_length, other_value in other.buckets.items():
-                joined_length = self_length + other_length
+                joined_length = self_length + other_length + distance
 
                 joined = expected_endpoints & other_value
                 joined = joined.shift(-offset)
@@ -43,30 +81,13 @@ class BucketRangeSet(collections.abc.Set[Range]):
         return BucketRangeSet(buckets)
 
     def __and__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        common_keys = self.buckets.keys() & other.buckets.keys()
-        buckets = {
-            key: self.buckets[key] & other.buckets[key]
-            for key in common_keys
-        }
-        return BucketRangeSet(buckets)
+        return self.conjunction(other)
 
     def __or__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        common_keys = self.buckets.keys() & other.buckets.keys()
-        buckets = {
-            key: self.buckets[key] | other.buckets[key]
-            for key in common_keys
-        }
-        for key in (self.buckets.keys() - common_keys):
-            buckets[key] = self.buckets[key]
-        for key in (other.buckets.keys() - common_keys):
-            buckets[key] = other.buckets[key]
-        return BucketRangeSet(buckets)
+        return self.disjunction(other)
 
     def __sub__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        common_keys = self.buckets.keys() & other.buckets.keys()
-        for key in common_keys:
-            self.buckets[key] -= other.buckets[key]
-        return self
+        return self.difference(other)
 
     def __len__(self):
         return sum(len(bm) for bm in self.buckets.values())
