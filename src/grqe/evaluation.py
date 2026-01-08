@@ -1,11 +1,9 @@
-from collections import defaultdict
-from typing import Callable, Tuple
+from typing import Callable, Protocol
 
-import networkx as nx
-from pyroaring import BitMap
-
-from korp import Corpus, Index, TemplateLiteral, FValue, Feature
-from query import *
+from grqe.fetch import LookupStrategy
+from grqe.korp import Corpus
+from grqe.query import *
+from grqe.debug import LOGGER
 
 
 def index_of_match[T](elements: List[T], predicate: Callable[[T], bool]) -> int:
@@ -19,13 +17,13 @@ def fold[X](xs: List[X], operator: Callable[[X, X], X]) -> X:
     return res
 
 
-LOGGER = make_logger(__name__)
+class Evaluator(Protocol):
+
+    def eval_fully(self, node: Node) -> Value:
+        ...
 
 
-
-
-
-class Evaluator:
+class CostGuidedEvaluator:
     set_operations = {
         Conjunction: lambda a, b: a & b,
         Disjunction: lambda a, b: a | b,
@@ -36,7 +34,7 @@ class Evaluator:
 
     def __init__(self, corpus: Corpus):
         self.corpus = corpus
-        self.index_manager = IndexMatcher(corpus)
+        self.index_manager = LookupStrategy.instance(corpus)
 
     def eval_next_in_list(self, elements: List[Node]) -> Node:
         target = min(elements, key=lambda e: e.cost if not e.is_evaluated() else math.inf)
