@@ -1,22 +1,25 @@
+import time
 from pathlib import Path
 
-from query import *
 from evaluation import *
+from grqe.debug import stopwatch
+from parser import parse
 
 corpus = Corpus(
     'wikipedia',
     Path('/home/niklas/git/korpsearch/corpora')
 )
-ev = Evaluator(corpus)
+ev = FullEvaluator(corpus)
 
-hund = Lookup([
-    Atom(0, "word", "äger")
-])
-huhund = Lookup([
-    Atom(0, "pos", "NN")
-])
+# A = [word@0 = "äger"];
+# B = [pos@0 = "NN" pos@1 = "NN" pos@2 = "NN" pos@3 = "NN"];
+# B = [pos@0 = "NN" pos@1 = "NN" pos@2 = "NN" pos@3 = "NN"]; A = alt B B;
 
-res = ev.eval_fully(
-    Alternative([hund, huhund])
-)
+while True:
+    raw_text = input('query: ')
+    with stopwatch('parsing'):
+        query = parse(raw_text)
+    with stopwatch('eval'):
+        ev.eval_fully(query)
 
+    time.sleep(0.1)
