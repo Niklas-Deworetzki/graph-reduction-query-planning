@@ -80,6 +80,7 @@ class GraphBasedIndexLookup:
                     result = binary_index.search([symbol_1, symbol_2], a_l.offset)
                     prefetched[a_l, a_r] = result
 
+        LOGGER.debug(f'Fetched data from {len(prefetched)} indexes.')
         return prefetched
 
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
@@ -102,7 +103,7 @@ class GraphBasedIndexLookup:
             corpus_size = len(self.corpus)
             graph = nx.Graph()
             graph.add_weighted_edges_from(
-                (a1, a2, corpus_size - len(r) for (a1, a2), r in prefetched.items())
+                (a1, a2, corpus_size - len(r)) for (a1, a2), r in prefetched.items()
             )
 
             index_selection = nx.min_edge_cover(graph)
