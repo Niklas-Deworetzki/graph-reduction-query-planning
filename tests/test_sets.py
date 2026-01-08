@@ -1,6 +1,6 @@
 from hypothesis import given, strategies as st
 
-from sets import BucketRangeSet
+from grqe.sets import BucketRangeSet
 
 
 def ranges(min_value=0, max_value=100000, max_diff=100):

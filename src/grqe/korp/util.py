@@ -8,27 +8,18 @@ from typing import Literal, NewType, Protocol, TypeVar
 ###############################################################################
 ## Project-specific constants and functions
 
-Feature = NewType('Feature', bytes)
-FValue = NewType('FValue', bytes)
-
-WORD = Feature(b'word')
-SENTENCE = Feature(b's')
-
-EMPTY = FValue(b'')
-START = FValue(b's')
-
+type Feature = bytes
+type FValue = bytes
 
 def check_feature(feature: Feature) -> None:
-    assert isinstance(feature, bytes), f"Feature must be a bytestring: {feature!r}"
-    assert re.match(br'^[a-z_][a-z_0-9]*$', feature), f"Ill-formed feature: {feature.decode()}"
+    assert isinstance(feature, bytes), f'Feature must be a bytestring: {feature!r}'
+    assert re.match(br'^[a-z_][a-z_0-9]*$', feature), f'Ill-formed feature: {feature.decode()}'
 
 
 ###############################################################################
 ## Type definitions
 
-ByteOrder = Literal['little', 'big']
-
-T = TypeVar('T')
+type ByteOrder = Literal['little', 'big']
 
 
 class ComparableProtocol(Protocol):

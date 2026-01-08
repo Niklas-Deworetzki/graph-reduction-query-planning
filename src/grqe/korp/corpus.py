@@ -69,7 +69,7 @@ class Corpus:
         return SymbolList(tuple(symbols.finditer(regex.encode())))
 
     def lookup_symbol(self, feature: Feature, sym: Symbol) -> FValue:
-        return FValue(self.tokens[feature].symbols.to_name(sym))
+        return self.tokens[feature].symbols.to_name(sym)
 
     def num_sentences(self) -> int:
         return len(self.sentence_pointers) - 1

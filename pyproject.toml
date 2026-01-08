@@ -1,0 +1,5 @@
+[project]
+name = "grqe"
+description = "A Graph-Reduction-based Query Engine"
+
+version = "0.0.1a1"

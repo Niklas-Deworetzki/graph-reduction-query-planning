@@ -1,15 +1,14 @@
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import NewType
 
 from .corpus import Corpus
 from .disk import Symbol, SymbolList, SymbolRange
-from .util import FValue, Feature, check_feature
+from .util import Feature, check_feature
 
 ################################################################################
 ## Literals, templates and instances
 
-Instance = NewType('Instance', Sequence[Symbol | SymbolRange | SymbolList])
+type Instance = Sequence[Symbol | SymbolRange | SymbolList]
 
 @dataclass(frozen=True, order=True)
 class KnownLiteral:
@@ -39,7 +38,7 @@ class KnownLiteral:
     def parse(corpus: Corpus, litstr: str) -> 'KnownLiteral':
         try:
             featstr, rest = litstr.split(':')
-            feature = Feature(featstr.lower().encode())
+            feature = featstr.lower().encode()
             check_feature(feature)
             try:
                 offset, valstr = rest.split('=')
@@ -47,7 +46,7 @@ class KnownLiteral:
             except ValueError:
                 offset, valstr = rest.split('#')
                 negative = True
-            value = FValue(valstr.encode())
+            value = valstr.encode()
             symbol = corpus.get_symbol(feature, value)
             return KnownLiteral(negative, int(offset), feature, symbol, corpus)
         except (ValueError, AssertionError):
@@ -69,7 +68,7 @@ class TemplateLiteral:
     def parse(litstr: str) -> 'TemplateLiteral':
         try:
             featstr, offset = litstr.split(':')
-            feature = Feature(featstr.lower().encode())
+            feature = featstr.lower().encode()
             return TemplateLiteral(int(offset), feature)
         except (ValueError, AssertionError):
             raise ValueError(f"Ill-formed template literal: {litstr}")
