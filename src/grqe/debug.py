@@ -40,7 +40,7 @@ class Stopwatch(AbstractContextManager):
 
     def __exit__(self, *exc):
         elapsed = current_time() - self._start
-        LOGGER.debug(f'Finished {self.task} in {elapsed // 1000} µs')
+        LOGGER.debug(f'Finished {self.task} in {(elapsed // 1000) / 1000} ms')
 
         self.accumulated_runtime += elapsed
         self.no_runs += 1
