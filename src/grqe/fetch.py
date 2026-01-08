@@ -112,7 +112,7 @@ class GraphBasedIndexLookup:
             # Actually combine results from selected indexes.
             index_lookups: list[BitMap] = []
             for a_l, a_r in index_selection:
-                if a_l.offset < a_r.offset:
+                if a_l.offset > a_r.offset:
                     a_l, a_r = a_r, a_l
 
                 index_lookups.append(prefetched[a_l, a_r])
