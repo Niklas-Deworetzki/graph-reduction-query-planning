@@ -21,7 +21,7 @@ class BucketRangeSet(collections.abc.Set[Range]):
         self.buckets = buckets
 
     def copy(self) -> 'BucketRangeSet':
-        buckets = {key: BitMap(value) for key, value in self.buckets}
+        buckets = {key: BitMap(value) for key, value in self.buckets.items()}
         return BucketRangeSet(buckets)
 
     def conjunction(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
