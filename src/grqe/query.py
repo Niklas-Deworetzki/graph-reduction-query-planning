@@ -1,7 +1,7 @@
 import math
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
-from typing import Generator, Optional, Sequence as Seq
+from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq
 
 from grqe.sets import BucketRangeSet
 
@@ -18,9 +18,24 @@ class Atom:
 
 
 class Node(ABC):
-    cost: Cost = field(hash=False)
-    value: Optional[Value] = field(hash=False)
-    _refcount: int = field(hash=False)
+    # Instance fields in this class will be provided for every node.
+    # We mark them specially, so that they can be mutable and nodes are still hashable and
+    #  compare equal on their fields.
+    __SUPERCLASS_FIELD_MARKER__: ClassVar = field(
+        init=False,  # Exclude from generated constructor.
+        compare=False,  # Exclude from generated comparison.
+        hash=False,  # Exclude from generated hash function.
+        repr=False,  # Exclude from generated representation.
+    )
+
+    # Mark all the instance fields for proper behavior.
+    cost: Cost = __SUPERCLASS_FIELD_MARKER__
+    value: Optional[Value] = __SUPERCLASS_FIELD_MARKER__
+    _refcount: int = __SUPERCLASS_FIELD_MARKER__
+
+    # Set statically for each subclass to define specific subclass behavior.
+    arity: ClassVar[Optional[int]] = None
+    __children_iter__: ClassVar[Callable[['Node'], Iterable['Node']]]
 
     def __post_init__(self):
         self.cost = math.inf
@@ -38,9 +53,8 @@ class Node(ABC):
             return self.value.copy()
         return self.value
 
-    @abstractmethod
     def children(self) -> Generator['Node']:
-        ...
+        yield from self.__children_iter__()
 
     def flatten(self) -> Generator['Node']:
         yield self
@@ -48,69 +62,68 @@ class Node(ABC):
             yield from child.flatten()
 
 
-@dataclass(unsafe_hash=True)
+def node(*fields: str, var_arity: bool = False):
+    """
+    Decorator used to define AST nodes.
+    """
+
+    def decorate(cls):
+        # Apply @dataclass(unsafe_hash=True) to the provided class.
+        # This generates a fitting hash function, turning the instances hashable.
+        cls = dataclass(unsafe_hash=True)(cls)
+
+        # Set the class-level arity.
+        cls.arity = None if var_arity else len(fields)
+
+        if var_arity:
+            assert len(fields) == 1, 'Variable arity operators are required to have 1 instance variable.'
+            cls.__children_iter__ = lambda self: getattr(self, fields[0])
+        else:
+            names = tuple(fields)
+            cls.__children_iter__ = lambda self: (getattr(self, n) for n in names)
+        return cls
+
+    return decorate
+
+
+@node('element')
 class Negation(Node):
     element: Node
 
-    def children(self) -> Generator['Node']:
-        yield self.element
 
-
-@dataclass(unsafe_hash=True)
+@node('elements', var_arity=True)
 class Conjunction(Node):
     elements: Seq[Node]
 
-    def children(self) -> Generator['Node']:
-        yield from self.elements
 
-
-@dataclass(unsafe_hash=True)
+@node('elements', var_arity=True)
 class Disjunction(Node):
     elements: Seq[Node]
 
-    def children(self) -> Generator['Node']:
-        yield from self.elements
 
-
-@dataclass(unsafe_hash=True)
+@node('elements', var_arity=True)
 class Sequence(Node):
     elements: Seq[Node]
 
-    def children(self) -> Generator['Node']:
-        yield from self.elements
+
+@node('elements', var_arity=True)
+class Alternative(Node):
+    elements: Seq[Node]
 
 
-@dataclass(unsafe_hash=True)
+@node('lhs', 'rhs')
 class Subtraction(Node):
     lhs: Node
     rhs: Node
 
-    def children(self) -> Generator['Node']:
-        yield self.lhs
-        yield self.rhs
+
+@node()
+class Arbitrary(Node):
+    pass
 
 
-@dataclass(unsafe_hash=True)
-class Extend(Node):
-    element: Node
-    lhs: int
-    rhs: int
-
-    def children(self) -> Generator['Node']:
-        yield self.element
-
-
-@dataclass(unsafe_hash=True)
+@node()
 class Lookup(Node):
     atoms: Seq[Atom]
 
-    def children(self) -> Generator['Node']:
-        yield from ()
 
-
-@dataclass(unsafe_hash=True)
-class Alternative(Node):
-    elements: Seq[Node]
-
-    def children(self) -> Generator['Node']:
-        yield from self.elements
