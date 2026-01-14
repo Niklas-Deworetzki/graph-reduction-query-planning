@@ -1,6 +1,7 @@
 from typing import ClassVar
 
 from lark import Lark
+from lark.exceptions import LarkError
 
 from grqe.query import *
 
@@ -127,5 +128,8 @@ class Transform:
 
 
 def parse(s: str) -> Node:
-    tree = _parser.parse(s)
-    return Transform().transform(tree)
+    try:
+        tree = _parser.parse(s)
+        return Transform().transform(tree)
+    except LarkError as err:
+        raise ValueError(s) from err
