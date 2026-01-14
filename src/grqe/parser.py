@@ -9,7 +9,7 @@ GRAMMAR = """
     
     statement: IDENTIFIER "=" expression ";"
     
-    expression: "(" expression ")"
+    expression: "(" expression ")"      -> parenthesized
               | OPERATOR expression+    -> application
               | IDENTIFIER              -> variable
               | "[" atom* "]"           -> lookup
@@ -88,6 +88,10 @@ class Transform:
                     raise ReassignmentException(id)
                 self.environment[id] = value
                 return value
+
+            case 'parenthesized':
+                child, = t.children
+                return self.transform(child)
 
             case 'application':
                 operator, *args = t.children
