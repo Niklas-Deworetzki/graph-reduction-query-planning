@@ -1,4 +1,4 @@
-from typing import ClassVar, Iterable, Protocol
+from typing import Protocol
 
 from grqe.debug import LOGGER, current_time
 from grqe.fetch import LookupStrategy
@@ -52,12 +52,6 @@ class FullEvaluator:
                 start_time = current_time()
 
                 node.value = node.lhs.value.copy() - node.rhs.value.copy()
-
-            case Extend():
-                self.eval_node(node.element)
-
-                start_time = current_time()
-                node.value = node.element.value.copy().extend(node.lhs, node.rhs)
 
             case Lookup():
                 start_time = current_time()
@@ -123,12 +117,6 @@ class CostGuidedEvaluator:
                 else:
                     self.eval_step(node.lhs)
 
-            case Extend():
-                if node.element.is_evaluated():
-                    node.value = node.element.deref_value().extend(node.lhs, node.rhs)
-                else:
-                    self.eval_step(node.element)
-
             case Lookup():
                 LOGGER.debug(f'Starting lookup for {len(node.atoms)} features.')
                 min_off = min(atom.relative_position for atom in node.atoms)
@@ -156,9 +144,6 @@ class CostGuidedEvaluator:
                 case Subtraction():
                     node.cost = self.update_costs(node.lhs) + self.update_costs(node.rhs) + 15
 
-                case Extend():
-                    node.cost = 2 + self.update_costs(node.element)
-
                 case Lookup():
                     node.cost = len(node.atoms)  # Lookup is 2 * log search + n intersections
 
@@ -170,15 +155,3 @@ class CostGuidedEvaluator:
             self.eval_step(node)
 
         return node.deref_value(does_mutate=False)
-
-# max_matching, no weights, lazy fetching
-# [+  6802 µs] INFO: Starting lookup for 4 features.
-# [+  6866 µs] DEBUG: Found 5 applicable indexes.
-# [+  7471 µs] INFO: Decided lookup order: {(TemplateLiteral(offset=0, feature=b'word'), TemplateLiteral(offset=2, feature=b'pos')), (TemplateLiteral(offset=0, feature=b'pos'), TemplateLiteral(offset=1, feature=b'pos'))})
-# [+ 18477 µs] INFO: Lookup finished.
-
-# weighted max matching, weights from eager fetching
-# [+  5112 µs] INFO: Starting lookup for 4 features.
-# [+ 34984 µs] DEBUG: Found 4 applicable indexes.
-# [+ 35868 µs] INFO: Decided lookup order: {(TemplateLiteral(offset=1, feature=b'pos'), TemplateLiteral(offset=0, feature=b'pos')), (TemplateLiteral(offset=0, feature=b'word'), TemplateLiteral(offset=2, feature=b'pos'))})
-# [+ 38497 µs] INFO: Lookup finished.
