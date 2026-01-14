@@ -4,7 +4,7 @@ from typing import Iterable, Protocol, Tuple
 import networkx as nx
 from pyroaring import BitMap
 
-from grqe.debug import LOGGER, stopwatch
+from grqe.debug import LOGGER, profile
 from grqe.fputil import fold
 from grqe.korp import Corpus, FValue, Feature, Index
 from grqe.query import Lookup
@@ -95,11 +95,11 @@ class GraphBasedIndexLookup:
         ]
 
         # Prefetch index lookups
-        with stopwatch('prefetching'):
+        with profile('prefetching'):
             prefetched = self._prefetch(attributes)
 
         # Build index selection graph
-        with stopwatch('graph solving'):
+        with profile('graph solving'):
             corpus_size = len(self.corpus)
             graph = nx.Graph()
             graph.add_weighted_edges_from(
@@ -108,7 +108,7 @@ class GraphBasedIndexLookup:
 
             index_selection = nx.min_edge_cover(graph)
 
-        with stopwatch('result allocation'):
+        with profile('result allocation'):
             # Actually combine results from selected indexes.
             index_lookups: list[BitMap] = []
             for a_l, a_r in index_selection:

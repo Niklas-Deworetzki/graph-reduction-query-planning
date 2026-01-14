@@ -1,6 +1,7 @@
 import logging
 import time
 from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 from typing import Callable, ClassVar, Optional
 
 import graphviz
@@ -26,45 +27,30 @@ def make_logger(name: str) -> logging.Logger:
 
 LOGGER = make_logger(__name__)
 
+PROFILING_ENABLED = False
 
-class Stopwatch(AbstractContextManager):
+
+@dataclass
+class ProfilingMeasurement(AbstractContextManager):
     task: str
+    metadata: dict = field(default_factory=dict)
+    time_taken: int = 0
 
-    no_runs: int = 0
-    accumulated_runtime: int = 0
-
-    WATCHES: ClassVar[dict[str, Stopwatch]] = {}
-    WATCH_STACK: ClassVar[list[Stopwatch]] = []
-
-    def __init__(self, task: str):
-        self.task = task
-        self.no_runs = 0
-        self.accumulated_runtime = 0
+    MEASUREMENTS_TAKEN: ClassVar[list[ProfilingMeasurement]] = []
 
     def __enter__(self):
-        self._start = current_time()
-        Stopwatch.WATCH_STACK.append(self)
+        self.time_taken = current_time()
         return self
 
-    def __exit__(self, *exc):
-        assert self == Stopwatch.WATCH_STACK.pop()
-
-        elapsed = current_time() - self._start
-        LOGGER.debug(' ' * len(Stopwatch.WATCH_STACK) + f'Finished {self.task} in {(elapsed // 1000) / 1000} ms')
-
-        self.accumulated_runtime += elapsed
-        self.no_runs += 1
-
-    @classmethod
-    def for_name(cls, name: str) -> Stopwatch:
-        watch = Stopwatch.WATCHES.get(name)
-        if watch is None:
-            watch = Stopwatch(name)
-            Stopwatch.WATCHES[name] = watch
-        return watch
+    def __exit__(self, exc_type, exc_value, traceback, /):
+        self.time_taken = current_time() - self.time_taken
+        if PROFILING_ENABLED:
+            ProfilingMeasurement.MEASUREMENTS_TAKEN.append(self)
 
 
-stopwatch = Stopwatch.for_name
+def profile(task: str, **kwargs):
+    return ProfilingMeasurement(task, metadata=kwargs)
+
 
 _GRAPHVIZ_NODE_STYLE = {
     'shape': 'box',
