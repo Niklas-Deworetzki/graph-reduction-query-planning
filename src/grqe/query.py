@@ -127,3 +127,22 @@ class Lookup(Node):
     atoms: Seq[Atom]
 
 
+def share(root: Node) -> Node:
+    cached: list[Node] = []
+
+    def rec(node: Node) -> Node:
+        for cache in cached:
+            if cache == node:
+                return cache
+
+        children = (rec(c) for c in node.children())
+        if isinstance(node, Lookup):
+            res = node
+        elif node.arity is None:
+            res = node.__class__(tuple(children))
+        else:
+            res = node.__class__(*children)
+        cached.append(res)
+        return res
+
+    return rec(root)
