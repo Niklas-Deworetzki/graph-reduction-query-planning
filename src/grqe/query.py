@@ -18,9 +18,9 @@ class Atom:
 
 
 class Node(ABC):
-    cost: Cost
-    value: Optional[Value]
-    _refcount: int
+    cost: Cost = field(hash=False)
+    value: Optional[Value] = field(hash=False)
+    _refcount: int = field(hash=False)
 
     def __post_init__(self):
         self.cost = math.inf
@@ -37,45 +37,53 @@ class Node(ABC):
         return self.value
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Negation(Node):
     element: Node
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Conjunction(Node):
     elements: Seq[Node]
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Disjunction(Node):
     elements: Seq[Node]
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Sequence(Node):
     elements: Seq[Node]
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Subtraction(Node):
     lhs: Node
     rhs: Node
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Extend(Node):
     element: Node
     lhs: int
     rhs: int
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Lookup(Node):
     atoms: Seq[Atom]
 
 
-@dataclass
+
+@dataclass(unsafe_hash=True)
 class Alternative(Node):
     elements: Seq[Node]
 
