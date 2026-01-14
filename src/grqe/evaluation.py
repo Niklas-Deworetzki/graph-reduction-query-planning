@@ -165,8 +165,6 @@ class CostGuidedEvaluator:
         return node.cost
 
     def eval_fully(self, node: Node) -> Value:
-        initialize_refcount(node)
-
         while not node.is_evaluated():
             self.update_costs(node)
             self.eval_step(node)

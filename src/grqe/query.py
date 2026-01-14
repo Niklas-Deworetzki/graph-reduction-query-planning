@@ -26,6 +26,8 @@ class Node(ABC):
         self.cost = math.inf
         self.value = None
         self._refcount = 0
+        for child in self.children():
+            child._refcount += 1
 
     def is_evaluated(self) -> bool:
         return self.value is not None
@@ -36,30 +38,46 @@ class Node(ABC):
             return self.value.copy()
         return self.value
 
+    @abstractmethod
+    def children(self) -> Generator['Node']:
+        ...
+
+    def flatten(self) -> Generator['Node']:
+        yield self
+        for child in self.children():
+            yield from child.flatten()
 
 
 @dataclass(unsafe_hash=True)
 class Negation(Node):
     element: Node
 
+    def children(self) -> Generator['Node']:
+        yield self.element
 
 
 @dataclass(unsafe_hash=True)
 class Conjunction(Node):
     elements: Seq[Node]
 
+    def children(self) -> Generator['Node']:
+        yield from self.elements
 
 
 @dataclass(unsafe_hash=True)
 class Disjunction(Node):
     elements: Seq[Node]
 
+    def children(self) -> Generator['Node']:
+        yield from self.elements
 
 
 @dataclass(unsafe_hash=True)
 class Sequence(Node):
     elements: Seq[Node]
 
+    def children(self) -> Generator['Node']:
+        yield from self.elements
 
 
 @dataclass(unsafe_hash=True)
@@ -67,6 +85,9 @@ class Subtraction(Node):
     lhs: Node
     rhs: Node
 
+    def children(self) -> Generator['Node']:
+        yield self.lhs
+        yield self.rhs
 
 
 @dataclass(unsafe_hash=True)
@@ -75,27 +96,21 @@ class Extend(Node):
     lhs: int
     rhs: int
 
+    def children(self) -> Generator['Node']:
+        yield self.element
 
 
 @dataclass(unsafe_hash=True)
 class Lookup(Node):
     atoms: Seq[Atom]
 
+    def children(self) -> Generator['Node']:
+        yield from ()
 
 
 @dataclass(unsafe_hash=True)
 class Alternative(Node):
     elements: Seq[Node]
 
-def initialize_refcount(node: Node):
-    node._refcount += 1
-    match node:
-        case Alternative() | Conjunction() | Disjunction() | Sequence():
-            for child in node.elements: initialize_refcount(child)
-
-        case Subtraction():
-            initialize_refcount(node.lhs)
-            initialize_refcount(node.rhs)
-
-        case Extend():
-            initialize_refcount(node.element)
+    def children(self) -> Generator['Node']:
+        yield from self.elements
