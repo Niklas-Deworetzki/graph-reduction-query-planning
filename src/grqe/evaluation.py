@@ -1,4 +1,4 @@
-from typing import ClassVar, Protocol
+from typing import ClassVar, Iterable, Protocol
 
 from grqe.debug import LOGGER, current_time
 from grqe.fetch import LookupStrategy
@@ -91,7 +91,7 @@ class CostGuidedEvaluator:
         self.corpus = corpus
         self.lookup_strategy = LookupStrategy.instance(corpus)
 
-    def eval_next_in_list(self, elements: List[Node]) -> Node:
+    def eval_next_in_list(self, elements: Iterable[Node]) -> Node:
         target = min(elements, key=lambda e: e.cost if not e.is_evaluated() else math.inf)
         self.eval_step(target)
         return target
