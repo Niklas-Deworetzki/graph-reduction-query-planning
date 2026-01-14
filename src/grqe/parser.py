@@ -103,7 +103,7 @@ class Transform:
                         raise ArityException(operator, arity, len(args))
                     return constructor(*args)
 
-                return constructor(args)
+                return constructor(tuple(args))
 
             case 'variable':
                 value = self.environment.get(t.children[0])
@@ -112,7 +112,8 @@ class Transform:
                 return value
 
             case 'lookup':
-                return Lookup([self.atom(t) for t in t.children])
+                atoms = tuple(self.atom(t) for t in t.children)
+                return Lookup(atoms)
 
         raise NotImplementedError()
 

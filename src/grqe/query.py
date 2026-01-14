@@ -1,7 +1,6 @@
 import math
-from abc import ABC
-from dataclasses import dataclass
-from typing import List, Optional
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Generator, Optional, Sequence as Seq
 
 from grqe.sets import BucketRangeSet
