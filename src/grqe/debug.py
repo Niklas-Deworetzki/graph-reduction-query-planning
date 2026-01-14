@@ -64,12 +64,13 @@ def visualize(
         score_format: Callable[[int], str] = str,
         comment: str = None
 ) -> graphviz.Digraph:
-    all_nodes = {
-        node: str(i)
+    all_nodes = list(root.flatten())
+    node_ids = {
+        id(node): str(i)
         for i, node in enumerate(root.flatten())
     }
-    min_score = min(score(n) for n in all_nodes.keys())
-    max_score = max(score(n) for n in all_nodes.keys())
+    min_score = min(score(n) for n in all_nodes)
+    max_score = max(score(n) for n in all_nodes)
 
     def display(n: Node) -> str:
         if isinstance(n, Lookup):
@@ -91,13 +92,14 @@ def visualize(
         return res
 
     graph = graphviz.Digraph(node_attr=_GRAPHVIZ_NODE_STYLE, comment=comment or 'auto-generated graphviz')
-    for node, str_id in all_nodes.items():
+    for node in all_nodes:
         node_text = f'{display(node)}\\n{score_format(score(node))}\\n'
         node_color = interpolate_color('#FBEF76', '#FA5C5C', score(node))
+        str_id = node_ids[id(node)]
         graph.node(str_id, node_text, fillcolor=node_color)
 
     def edges(n: Node, inbound: Optional[str]):
-        str_id = all_nodes[n]
+        str_id = node_ids[id(n)]
         if inbound:
             graph.edge(inbound, str_id)
 
