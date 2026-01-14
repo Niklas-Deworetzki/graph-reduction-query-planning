@@ -10,6 +10,7 @@ from .disk import IntArray, IntBytesMap, SymbolRange, SymbolList
 from .corpus import Corpus
 from .literals import Template, Instance
 from .util import add_suffix, binsearch_range
+from ..debug import stopwatch
 
 
 ################################################################################
@@ -74,6 +75,7 @@ class Index:
             self.bigsets.close()
 
     def search(self, instance: Instance, offset: int = 0) -> BitMap:
+        # FIXME: This method owns 20% of its own runtime, but does not do a lot.
         try:
             ranges = self.get_instance_range(instance)
         except ValueError:
@@ -95,11 +97,15 @@ class Index:
     def lookup_smallset(self, start_key: int, end_key: int) -> BitMap:
         if self.smallsets:
             try:
-                search_key = self.get_search_key()
-                error = (start_key == end_key)
-                start, end = binsearch_range(0, len(self.smallsets) - 1, start_key, end_key, search_key, error=error)
+                with stopwatch('smallset_seek'):
+                    search_key = self.get_search_key()
+                    error = (start_key == end_key)
+                    start, end = binsearch_range(0, len(self.smallsets) - 1, start_key, end_key, search_key, error=error)
                 if 0 <= start <= end < len(self.smallsets):
-                    return BitMap(self.smallsets.slice(start, end + 1))
+                    with stopwatch('smallset_load'):
+                        data = self.smallsets.slice(start, end + 1)
+                    with stopwatch('smallset_deserialize'):
+                        return BitMap(data)
             except (KeyError, IndexError):
                 pass
         return BitMap()
@@ -108,12 +114,16 @@ class Index:
         if self.bigsets:
             try:
                 if start_key == end_key:
-                    bmap = self.bigsets[start_key]
-                    return BitMap.deserialize(bmap)
+                    with stopwatch('bigset_load'):
+                        bmap = self.bigsets[start_key]
+                    with stopwatch('bigset_deserialize'):
+                        return BitMap.deserialize(bmap)
                 else:
-                    bmaps = self.bigsets.slice(start_key, end_key)
+                    with stopwatch('bigset_load'):
+                        bmaps = self.bigsets.slice(start_key, end_key)
                     logging.debug(f"Found {len(bmaps)} bitmaps between {start_key}..{end_key}")
-                    return BitMap.union(*(BitMap.deserialize(bm) for bm in bmaps))
+                    with stopwatch('bigset_deserialize'):
+                        return BitMap.union(*(BitMap.deserialize(bm) for bm in bmaps))
             except (KeyError, IndexError):
                 pass
         return BitMap()
