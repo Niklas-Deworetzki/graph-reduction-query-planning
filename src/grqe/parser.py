@@ -117,6 +117,8 @@ class Transform:
 
             case 'lookup':
                 atoms = tuple(self.atom(t) for t in t.children)
+                if len(atoms) == 0:
+                    return Arbitrary()
                 return Lookup(atoms)
 
         raise NotImplementedError()
