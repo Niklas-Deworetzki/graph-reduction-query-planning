@@ -2,6 +2,7 @@ import math
 from abc import ABC
 from dataclasses import dataclass
 from typing import List, Optional
+from typing import Generator, Optional, Sequence as Seq
 
 from grqe.sets import BucketRangeSet
 
@@ -44,17 +45,17 @@ class Negation(Node):
 
 @dataclass
 class Conjunction(Node):
-    elements: List[Node]
+    elements: Seq[Node]
 
 
 @dataclass
 class Disjunction(Node):
-    elements: List[Node]
+    elements: Seq[Node]
 
 
 @dataclass
 class Sequence(Node):
-    elements: List[Node]
+    elements: Seq[Node]
 
 
 @dataclass
@@ -72,13 +73,12 @@ class Extend(Node):
 
 @dataclass
 class Lookup(Node):
-    atoms: List[Atom]
+    atoms: Seq[Atom]
 
 
 @dataclass
 class Alternative(Node):
-    elements: List[Node]
-
+    elements: Seq[Node]
 
 def initialize_refcount(node: Node):
     node._refcount += 1
