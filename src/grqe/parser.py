@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import Type
 
 from lark import Lark
 from lark.exceptions import LarkError
@@ -60,13 +60,13 @@ class ArityException(ParseException):
 
 
 class Transform:
-    constructors: ClassVar[dict] = {
-        'con': (None, Conjunction),
-        'dis': (None, Disjunction),
-        'seq': (None, Sequence),
-        'alt': (None, Alternative),
-        'sub': (2, Subtraction),
-        'neg': (1, Negation),
+    constructors: ClassVar[dict[str, Type[Node]]] = {
+        'con': Conjunction,
+        'dis': Disjunction,
+        'seq': Sequence,
+        'alt': Alternative,
+        'sub': Subtraction,
+        'neg': Negation,
     }
 
     environment: dict[str, Node]
@@ -97,15 +97,14 @@ class Transform:
             case 'application':
                 operator, *args = t.children
 
-                lookup = self.constructors.get(operator)
-                if lookup is None:
+                constructor = self.constructors.get(operator)
+                if constructor is None:
                     raise UnknownOperatorException(operator)
 
                 args = [self.transform(arg) for arg in args]
-                arity, constructor = lookup
-                if arity is not None:
-                    if arity != len(args):
-                        raise ArityException(operator, arity, len(args))
+                if constructor.arity is not None:
+                    if constructor.arity != len(args):
+                        raise ArityException(operator, constructor.arity, len(args))
                     return constructor(*args)
 
                 return constructor(tuple(args))
