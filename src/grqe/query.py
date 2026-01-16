@@ -66,6 +66,12 @@ class Node(ABC):
         for child in self.children():
             yield from child.flatten()
 
+    @classmethod
+    def construct(cls, elements: Iterable[Node]) -> 'Node':
+        if cls.arity is not None:
+            return cls(*elements)
+        return cls(tuple(elements))
+
 
 def node(*fields: str, var_arity: bool = False):
     """
@@ -145,10 +151,8 @@ def share(root: Node) -> Node:
         children = (rec(c) for c in node.children())
         if isinstance(node, Lookup):
             res = node
-        elif node.arity is None:
-            res = node.__class__(tuple(children))
         else:
-            res = node.__class__(*children)
+            res = node.construct(children)
         cached.append(res)
         return res
 
