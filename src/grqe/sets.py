@@ -6,6 +6,7 @@ from pyroaring import BitMap
 
 type Range = Tuple[int, int]
 
+type RangeSet = collections.abc.Set[Range]
 
 class BucketRangeSet(collections.abc.Set[Range]):
     buckets: Dict[int, BitMap]
