@@ -5,6 +5,11 @@ from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence a
 
 from grqe.sets import BucketRangeSet
 
+__all__ = [
+    'Cost', 'Value', 'Atom', 'Node',
+    'share',
+]
+
 Cost = float
 
 Value = BucketRangeSet
@@ -81,6 +86,8 @@ def node(*fields: str, var_arity: bool = False):
         else:
             names = tuple(fields)
             cls.__children_iter__ = lambda self: (getattr(self, n) for n in names)
+
+        __all__.append(cls.__name__)
         return cls
 
     return decorate
