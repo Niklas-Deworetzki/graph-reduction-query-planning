@@ -15,7 +15,7 @@ Cost = float
 Value = BucketRangeSet
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class Atom:
     relative_position: int
     key: str
@@ -49,6 +49,11 @@ class Node(ABC):
         for child in self.children():
             child._refcount += 1
 
+    __known_subtypes__: ClassVar[list[type[Node]]] = []
+
+    def __init_subclass__(cls):
+        Node.__known_subtypes__.append(cls)
+
     def is_evaluated(self) -> bool:
         return self.value is not None
 
@@ -71,6 +76,16 @@ class Node(ABC):
         if cls.arity is not None:
             return cls(*elements)
         return cls(tuple(elements))
+
+    @classmethod
+    def class_tag(cls) -> int:
+        return Node.__known_subtypes__.index(cls)
+
+    @cached_property
+    def signature(self) -> tuple:
+        tag = self.class_tag()
+        child_tags = tuple(c.signature for c in self.children())
+        return tag, len(child_tags), *child_tags
 
 
 def node(*fields: str, var_arity: bool = False):
@@ -99,6 +114,18 @@ def node(*fields: str, var_arity: bool = False):
     return decorate
 
 
+@node()
+class Lookup(Node):
+    atoms: Iterable[Atom]
+
+    @cached_property
+    @override
+    def signature(self) -> tuple:
+        tag = self.class_tag()
+        immutable_atoms = tuple(self.atoms)
+        return tag, len(immutable_atoms), *immutable_atoms
+
+
 @node('element')
 class Negation(Node):
     element: Node
@@ -119,11 +146,6 @@ class Sequence(Node):
     elements: Seq[Node]
 
 
-@node('elements', var_arity=True)
-class Alternative(Node):
-    elements: Seq[Node]
-
-
 @node('lhs', 'rhs')
 class Subtraction(Node):
     lhs: Node
@@ -136,8 +158,8 @@ class Arbitrary(Node):
 
 
 @node()
-class Lookup(Node):
-    atoms: Seq[Atom]
+class Epsilon(Node):
+    pass
 
 
 def share(root: Node) -> Node:
