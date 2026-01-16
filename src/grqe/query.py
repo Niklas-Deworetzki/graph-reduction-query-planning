@@ -133,12 +133,17 @@ class Negation(Node):
 
 @node('elements', var_arity=True)
 class Conjunction(Node):
-    elements: Seq[Node]
+    elements: Iterable[Node]
 
 
 @node('elements', var_arity=True)
 class Disjunction(Node):
-    elements: Seq[Node]
+    elements: Iterable[Node]
+
+
+@node('elements', var_arity=True)
+class Alternative(Node):
+    elements: Iterable[Node]
 
 
 @node('elements', var_arity=True)
