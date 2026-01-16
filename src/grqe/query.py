@@ -1,7 +1,8 @@
 import math
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq
+from functools import cached_property
+from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
 
 from grqe.sets import BucketRangeSet
 
