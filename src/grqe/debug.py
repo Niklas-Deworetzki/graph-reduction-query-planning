@@ -2,7 +2,7 @@ import logging
 import time
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional, Tuple
 
 import graphviz
 
@@ -58,26 +58,59 @@ _GRAPHVIZ_NODE_STYLE = {
 }
 
 
-def visualize(
+def _graphviz_node_display(node: Node) -> str:
+    if isinstance(node, Lookup):
+        atoms = [f'{atom.key}@{atom.relative_position}=\"{atom.value}\"' for atom in node.atoms]
+        return '[' + ', '.join(atoms) + ']'
+    else:
+        return str(type(node).__name__)
+
+
+def _graphviz_visualization(
         root: Node,
-        score: Callable[[Node], int],
-        score_format: Callable[[int], str] = str,
-        comment: str = None
+        node_format: Callable[[Node], Tuple[str, dict[str, Any]]],
+        comment: str = None,
 ) -> graphviz.Digraph:
     all_nodes = list(root.flatten())
     node_ids = {
         id(node): str(i)
         for i, node in enumerate(root.flatten())
     }
+
+    graph = graphviz.Digraph(node_attr=_GRAPHVIZ_NODE_STYLE, comment=comment or 'auto-generated graphviz')
+    for node in all_nodes:
+        node_text, metadata = node_format(node)
+        str_id = node_ids[id(node)]
+        graph.node(str_id, node_text, **metadata)
+
+    def edges(n: Node, inbound: Optional[str]):
+        str_id = node_ids[id(n)]
+        if inbound:
+            graph.edge(inbound, str_id)
+
+        for child in n.children():
+            edges(child, str_id)
+
+    edges(root, None)
+    return graph
+
+
+def visualize(root: Node, comment: str = None) -> graphviz.Digraph:
+    def plain_format(node: Node) -> Tuple[str, dict[str, Any]]:
+        return _graphviz_node_display(node), {}
+
+    return _graphviz_visualization(root, plain_format, comment)
+
+
+def visualize_annotated(
+        root: Node,
+        score: Callable[[Node], int],
+        score_format: Callable[[int], str] = str,
+        comment: str = None
+) -> graphviz.Digraph:
+    all_nodes = list(root.flatten())
     min_score = min(score(n) for n in all_nodes)
     max_score = max(score(n) for n in all_nodes)
-
-    def display(n: Node) -> str:
-        if isinstance(n, Lookup):
-            atoms = [f'{atom.key}@{atom.relative_position}=\"{atom.value}\"' for atom in n.atoms]
-            return '[' + ', '.join(atoms) + ']'
-        else:
-            return str(type(n).__name__)
 
     def interpolate_color(col_min: str, col_max: str, value: int) -> str:
         res = '#'
@@ -91,20 +124,9 @@ def visualize(
             res += f'{chan_val:0>2X}'
         return res
 
-    graph = graphviz.Digraph(node_attr=_GRAPHVIZ_NODE_STYLE, comment=comment or 'auto-generated graphviz')
-    for node in all_nodes:
-        node_text = f'{display(node)}\\n{score_format(score(node))}\\n'
+    def score_format(node: Node) -> Tuple[str, dict[str, Any]]:
+        node_text = f'{_graphviz_node_display(node)}\\n{score_format(score(node))}\\n'
         node_color = interpolate_color('#FBEF76', '#FA5C5C', score(node))
-        str_id = node_ids[id(node)]
-        graph.node(str_id, node_text, fillcolor=node_color)
+        return node_text, {'fillcolor': node_color}
 
-    def edges(n: Node, inbound: Optional[str]):
-        str_id = node_ids[id(n)]
-        if inbound:
-            graph.edge(inbound, str_id)
-
-        for child in n.children():
-            edges(child, str_id)
-
-    edges(root, None)
-    return graph
+    return _graphviz_visualization(root, score_format, comment)
