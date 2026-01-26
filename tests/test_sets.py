@@ -72,7 +72,7 @@ def test_associativity(a, b, c, operation):
 
     res1 = operation(rset_a, operation(rset_b, rset_c))
     res2 = operation(rset_a, operation(rset_b, rset_c))
-    assert res1 == res2, 'Operation is not associative: a + (b + c) =/= (a + b) + c'
+    assert res1 == res2, f'{operation.__name__} is not associative: a + (b + c) =/= (a + b) + c'
 
 
 def test_commutativity(a, b, operation):
@@ -81,14 +81,14 @@ def test_commutativity(a, b, operation):
 
     res1 = operation(rset_a, rset_b)
     res2 = operation(rset_b, rset_a)
-    assert res1 == res2, 'Operation is not commutative: a + b =/= b + a'
+    assert res1 == res2, f'{operation.__name__} is not commutative: a + b =/= b + a'
 
 
 def test_idempotence(a, operation):
     rset_a = BucketRangeSet.of(a)
 
     res = operation(rset_a, rset_a)
-    assert rset_a == res, 'Operation is not idempotent: a + a =/= a'
+    assert rset_a == res, f'{operation.__name__} is not idempotent: a + a =/= a'
 
 
 def test_distributivity(a, b, c, times, plus):
@@ -104,7 +104,7 @@ def test_distributivity(a, b, c, times, plus):
         rset_a,
         plus(rset_b, rset_c),
     )
-    assert res1 == res2, 'Operation does not distribute: (a * b) + (a * c) =/= a * (b + c)'
+    assert res1 == res2, f'{times.__name__} does not distribute over {plus.__name__}: (a * b) + (a * c) =/= a * (b + c)'
 
 
 TEST_OPERATOR_SEMANTICS = [
@@ -154,9 +154,11 @@ def test_idempotent_disjunction(a):
 def test_conjunction_distributes_over_disjunction(a, b, c):
     test_distributivity(a, b, c, BucketRangeSet.conjunction, BucketRangeSet.disjunction)
 
+
 @given(set_of_ranges(), set_of_ranges(), set_of_ranges())
 def test_disjunction_distributes_over_conjunction(a, b, c):
     test_distributivity(a, b, c, BucketRangeSet.disjunction, BucketRangeSet.conjunction)
+
 
 @given(set_of_ranges(), set_of_ranges(), set_of_ranges())
 def test_sequence_distributes_over_conjunction(a, b, c):
