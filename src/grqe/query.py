@@ -8,7 +8,6 @@ from grqe.sets import BucketRangeSet
 
 __all__ = [
     'Cost', 'Value', 'Atom', 'Node',
-    'share',
 ]
 
 Cost = float
@@ -193,22 +192,3 @@ class Arbitrary(Node):
 @node_type()
 class Epsilon(Node):
     pass
-
-
-def share(root: Node) -> Node:
-    cached: list[Node] = []
-
-    def rec(node: Node) -> Node:
-        for cache in cached:
-            if cache == node:
-                return cache
-
-        children = (rec(c) for c in node.children())
-        if isinstance(node, Lookup):
-            res = node
-        else:
-            res = node.construct(children)
-        cached.append(res)
-        return res
-
-    return rec(root)
