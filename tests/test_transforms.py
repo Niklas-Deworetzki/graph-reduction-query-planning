@@ -68,7 +68,7 @@ def test_remove_neutral_elements(node: Node):
 
 @given(nodes())
 def test_flatten(node: Node):
-    flattened = flatten(node)
+    flattened = flatten_associative(node)
 
     for n in flattened.flatten():
         if n.is_associative:
@@ -78,7 +78,7 @@ def test_flatten(node: Node):
 
 @given(st.builds(Sequence, immutable_lists(nodes())))
 def test_flatten_preserves_order(sequence: Sequence):
-    flattened = flatten(sequence)
+    flattened = flatten_associative(sequence)
 
     original_leaf_order = [c for c in sequence.flatten() if c.arity == 0]
     flattened_leaf_order = [c for c in flattened.flatten() if c.arity == 0]
