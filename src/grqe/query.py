@@ -65,6 +65,14 @@ class Node(ABC):
     def __init_subclass__(cls):
         Node.OPERATOR_TYPES.append(cls)
 
+    @abstractmethod
+    def possible_widths(self) -> set[int]:
+        """Returns all possible widths for results of the given node."""
+
+    def has_fixed_width(self) -> bool:
+        """True, if there is only one possible width for results of the given node."""
+        return len(self.possible_widths()) == 1
+
     def is_evaluated(self) -> bool:
         return self.value is not None
 
@@ -149,7 +157,13 @@ def node_type(*fields: str,
 
 @node_type()
 class Lookup(Node):
+    width: int
     atoms: Iterable[Atom]
+
+    def __post_init__(self):
+        super().__post_init__()
+        for atom in self.atoms:
+            assert 0 <= atom.relative_position < self.width
 
     @cached_property
     @override
@@ -158,6 +172,8 @@ class Lookup(Node):
         immutable_atoms = tuple(self.atoms)
         return tag, len(immutable_atoms), *immutable_atoms
 
+    def possible_widths(self) -> set[int]:
+        return {self.width}
 
 
 # @node_type('element')
@@ -169,20 +185,38 @@ class Lookup(Node):
 class Conjunction(Node):
     elements: Iterable[Node]
 
+    def possible_widths(self) -> set[int]:
+        widths = (element.possible_widths() for element in self.elements)
+        return set.intersection(*widths)
+
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)
 class Disjunction(Node):
     elements: Iterable[Node]
+
+    def possible_widths(self) -> set[int]:
+        widths = (element.possible_widths() for element in self.elements)
+        return set.union(*widths)
 
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)
 class Alternative(Node):
     elements: Iterable[Node]
 
+    def possible_widths(self) -> set[int]:
+        widths = (element.possible_widths() for element in self.elements)
+        return set.union(*widths)
+
 
 @node_type('elements', var_arity=True, associative=True)
 class Sequence(Node):
     elements: Seq[Node]
+
+    def possible_widths(self) -> set[int]:
+        widths = {0}
+        for element in self.elements:
+            widths = {x + y for x in widths for y in element.possible_widths()}
+        return widths
 
 
 @node_type('lhs', 'rhs')
@@ -190,12 +224,21 @@ class Subtraction(Node):
     lhs: Node
     rhs: Node
 
+    def possible_widths(self) -> set[int]:
+        return self.lhs.possible_widths()
+
 
 @node_type()
 class Arbitrary(Node):
-    pass
+
+    def possible_widths(self) -> set[int]:
+        return {1}
 
 
 @node_type()
 class Epsilon(Node):
     pass
+
+    def possible_widths(self) -> set[int]:
+        return {0}
+
