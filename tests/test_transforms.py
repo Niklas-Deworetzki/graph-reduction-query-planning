@@ -8,13 +8,17 @@ def immutable_lists(xs):
     return st.lists(xs, min_size=1).map(tuple)
 
 
-def atoms():
-    return st.builds(
-        Atom,
-        st.integers(min_value=0, max_value=10),
-        st.text(min_size=1, max_size=10),
-        st.text(min_size=1, max_size=10),
-    )
+@st.composite
+def lookups(draw):
+    width = draw(st.integers(min_value=1, max_value=10))
+
+    valid_offsets = st.integers(min_value=0, max_value=width - 1)
+    atoms = [
+        Atom(offset, draw(st.text(min_size=1, max_size=10)), draw(st.text(min_size=1, max_size=10)))
+        for offset in draw(st.lists(valid_offsets, min_size=1))
+
+    ]
+    return Lookup(width, atoms)
 
 
 def nodes():
@@ -23,12 +27,11 @@ def nodes():
             | st.builds(Disjunction, immutable_lists(xs)) \
             | st.builds(Alternative, immutable_lists(xs)) \
             | st.builds(Sequence, immutable_lists(xs)) \
-            | st.builds(Negation, xs) \
             | st.builds(Subtraction, xs, xs)
 
     base = st.just(Arbitrary()) \
            | st.just(Epsilon()) \
-           | st.builds(Lookup, immutable_lists(atoms()))
+           | lookups()
     return st.recursive(base, extend=rec)
 
 
