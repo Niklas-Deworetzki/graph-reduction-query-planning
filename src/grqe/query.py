@@ -48,11 +48,19 @@ class Node(ABC):
     def __post_init__(self):
         self.cost = math.inf
         self.value = None
+
+        # Initialize reference counting.
         self._refcount = 0
         for child in self.children():
             child._refcount += 1
 
+    # Metadata of implemented classes. Used for signature computation.
     OPERATOR_TYPES: ClassVar[list[type[Node]]] = []
+
+    @classmethod
+    def class_tag(cls) -> int:
+        """Numerical tag representing the concrete node type."""
+        return Node.OPERATOR_TYPES.index(cls)
 
     def __init_subclass__(cls):
         Node.OPERATOR_TYPES.append(cls)
@@ -67,9 +75,11 @@ class Node(ABC):
         return self.value
 
     def children(self) -> Generator['Node']:
+        """Iterate over all direct descendants."""
         yield from self._children_iter()
 
     def flatten(self) -> Generator['Node']:
+        """Iterate over all nodes in the sub-graph with this node as its root."""
         yield self
         for child in self.children():
             yield from child.flatten()
@@ -80,10 +90,6 @@ class Node(ABC):
         if cls.arity is not None:
             return cls(*elements)
         return cls(tuple(elements))
-
-    @classmethod
-    def class_tag(cls) -> int:
-        return Node.OPERATOR_TYPES.index(cls)
 
     def __lt__(self, other):
         return self.signature < other.signature
