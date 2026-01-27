@@ -153,9 +153,10 @@ class Lookup(Node):
         return tag, len(immutable_atoms), *immutable_atoms
 
 
-@node_type('element')
-class Negation(Node):
-    element: Node
+
+# @node_type('element')
+# class Negation(Node):
+#    element: Node
 
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)

@@ -66,7 +66,6 @@ class Transform:
         'seq': Sequence,
         'alt': Alternative,
         'sub': Subtraction,
-        'neg': Negation,
     }
 
     environment: dict[str, Node]
