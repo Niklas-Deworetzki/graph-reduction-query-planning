@@ -84,7 +84,7 @@ def canonical(root: Node) -> Node:
 
 def order_children(root: Node) -> Node:
     if isinstance(root, Lookup):
-        return Lookup(tuple(sorted(root.atoms)))
+        return Lookup(root.width, tuple(sorted(root.atoms)))
 
     if root.arity == 0:
         return root
