@@ -144,22 +144,119 @@ def flatten_associative(root: Node) -> Node:
 def unfuse_leaves(root: Node) -> Node:
     if isinstance(root, Lookup):
         leaves = defaultdict(set)
-
         for atom in root.atoms:
             leaves[atom.relative_position].add((atom.key, atom.value))
 
-        min_offset = min(leaves.keys())
-        max_offset = max(leaves.keys())
-        sequence = []
-        for offset in range(min_offset, max_offset + 1):
-            entries_at_offset = leaves[offset]
-            if not entries_at_offset:
-                node = Arbitrary()
-            else:
-                atoms = (Atom(0, key, value) for key, value in entries_at_offset)
-                node = Lookup(tuple(atoms))
-            sequence.append(node)
-        return Sequence(tuple(sequence))
+        sequence: list[Node] = [Arbitrary()] * (max(leaves.keys()) + 1)
+        for offset, entries in leaves.items():
+            atoms = (Atom(0, key, value) for key, value in entries)
+            sequence[offset] = Lookup(tuple(atoms))
+        if len(sequence) == 1:
+            return sequence[0]
+        else:
+            return Sequence(tuple(sequence))
     else:
         children = (unfuse_leaves(c) for c in root.children())
         return root.construct(children)
+
+
+def fuse_leaves(root: Node) -> Node:
+    def partition_fixed_width_sequence(sequence: Iterable[Node]) -> Generator[Seq[Node]]:
+        partition = []
+        for element in sequence:
+            if not element.has_fixed_width():
+                # Not a fixed-width sequence.
+                if partition:
+                    # Commit partition so far and reset.
+                    yield partition
+                    partition = []
+
+                # Non-fixed-width elements are their own partition.
+                yield [element]
+
+            else:
+                partition.append(element)
+
+        if partition:
+            yield partition
+
+    def fuse_partition(partition: Seq[Node]) -> Node:
+        if len(partition) == 1:  # Only one item, already fused.
+            return partition[0]
+
+        for unfusable_prefix in range(len(partition)):
+            if isinstance(partition[unfusable_prefix], Lookup): break
+        for unfusable_suffix in reversed(range(len(partition))):
+            if isinstance(partition[unfusable_suffix], Lookup): break
+        unfusable_suffix += 1
+
+        if unfusable_prefix > unfusable_suffix:  # Entire partition is unfusable.
+            return Sequence(tuple(partition))
+
+        atoms: list[Atom] = []
+        remainder: list[Node] = []
+
+        offset = 0
+        for element in partition[unfusable_prefix:unfusable_suffix]:
+            if isinstance(element, Lookup):
+                atoms += (atom.shift(offset) for atom in element.atoms)
+
+                for _ in range(element.width()):
+                    remainder.append(Arbitrary())
+
+            else:
+                remainder.append(element)
+
+            offset += element.width()
+
+        fused = Lookup(atoms)
+
+        trivial_remainder = all(isinstance(el, Arbitrary) for el in remainder)
+        if not trivial_remainder:
+            conjuncts = [Sequence(remainder), fused]
+            fused = Conjunction(conjuncts)
+
+        if unfusable_suffix - unfusable_prefix < len(partition):
+            fused = Sequence(
+                tuple(
+                    partition[:unfusable_prefix] +
+                    [fused] +
+                    partition[unfusable_suffix:]
+                )
+            )
+
+        return fused
+
+    def fuse_conjunction(conjuncts: Iterable[Node]) -> Node:
+        atoms: list[Atom] = []
+        remainder: list[Node] = []
+
+        for child in conjuncts:
+            if isinstance(child, Lookup):
+                atoms += child.atoms
+            else:
+                remainder.append(child)
+
+        fused = Lookup(tuple(atoms))
+
+        if not remainder:
+            return fused
+        else:
+            remainder.append(fused)
+            return Conjunction(tuple(remainder))
+
+    if root.arity == 0:
+        return root
+
+    rec = (fuse_leaves(c) for c in root.children())
+    if isinstance(root, Conjunction):
+        return fuse_conjunction(rec)
+
+    elif isinstance(root, Sequence):
+        partitions = tuple(fuse_partition(partition) for partition in partition_fixed_width_sequence(rec))
+        if len(partitions) == 1:
+            return partitions[0]
+        else:
+            return Sequence(partitions)
+
+    return root.construct(rec)
