@@ -128,7 +128,7 @@ def flatten_associative(root: Node) -> Node:
                 yield c
 
     if root_type.is_associative:
-        children = list(_unpack(root))
+        children = _unpack(root)
     else:
         children = root.children()
 
