@@ -4,9 +4,9 @@ from grqe.query import *
 
 
 def optimize(root: Node) -> Node:
-    root = unfuse_leaves(root)
-    root = rewrite(root)
-    return share(root)
+    for fn in (unfuse_leaves, rewrite, fuse_leaves, share):
+        root = fn(root)
+    return root
 
 
 def share(root: Node) -> Node:
