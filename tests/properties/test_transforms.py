@@ -10,15 +10,15 @@ def immutable_lists(xs):
 
 @st.composite
 def lookups(draw):
-    width = draw(st.integers(min_value=1, max_value=10))
+    offsets = draw(st.lists(st.integers(min_value=0, max_value=10), min_size=1))
+    min_offset = min(offsets)
+    normalized_offsets = (offset - min_offset for offset in offsets)
 
-    valid_offsets = st.integers(min_value=0, max_value=width - 1)
     atoms = [
         Atom(offset, draw(st.text(min_size=1, max_size=10)), draw(st.text(min_size=1, max_size=10)))
-        for offset in draw(st.lists(valid_offsets, min_size=1))
-
+        for offset in normalized_offsets
     ]
-    return Lookup(width, atoms)
+    return Lookup(atoms)
 
 
 def nodes():
