@@ -1,5 +1,5 @@
 import math
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
@@ -20,6 +20,9 @@ class Atom:
     relative_position: int
     key: str
     value: str
+
+    def shift(self, offset: int) -> Atom:
+        return Atom(self.relative_position + offset, self.key, self.value)
 
 
 class Node(ABC):
@@ -63,15 +66,27 @@ class Node(ABC):
         return Node.OPERATOR_TYPES.index(cls)
 
     def __init_subclass__(cls):
+        super().__init_subclass__()
         Node.OPERATOR_TYPES.append(cls)
+
+        possible_widths_is_overridden = cls.possible_widths is not Node.possible_widths
+        width_is_overridden = cls.width is not Node.width
+        if not (possible_widths_is_overridden or width_is_overridden):
+            raise TypeError(f'{cls.__name__} must override {Node.possible_widths.__name__} or {Node.width.__name__}.')
 
     @abstractmethod
     def possible_widths(self) -> set[int]:
-        """Returns all possible widths for results of the given node."""
+        """Returns all possible widths for results of this node."""
+        raise NotImplementedError()
 
     def has_fixed_width(self) -> bool:
         """True, if there is only one possible width for results of the given node."""
         return len(self.possible_widths()) == 1
+
+    def width(self) -> int:
+        """Returns the width of this node or raises an exception if this node does not have a fixed width."""
+        (fixed_width,) = self.possible_widths()
+        return fixed_width
 
     def is_evaluated(self) -> bool:
         return self.value is not None
@@ -138,7 +153,7 @@ def node_type(*fields: str,
         cls.is_commutative = commutative
         cls.is_idempotent = idempotent
 
-        assert var_arity == (associative or commutative or idempotent), \
+        assert not (associative or commutative or idempotent) or var_arity, \
             'Only variable arity operators can be associative, commutative or idempotent.'
 
         if var_arity:
@@ -157,13 +172,12 @@ def node_type(*fields: str,
 
 @node_type()
 class Lookup(Node):
-    width: int
     atoms: Iterable[Atom]
 
     def __post_init__(self):
         super().__post_init__()
-        for atom in self.atoms:
-            assert 0 <= atom.relative_position < self.width
+        assert any(atom.relative_position == 0 for atom in self.atoms), 'At least one atom must be at offset 0.'
+        assert all(atom.relative_position >= 0 for atom in self.atoms), 'All atoms must have a positive offset.'
 
     @cached_property
     @override
@@ -172,8 +186,11 @@ class Lookup(Node):
         immutable_atoms = tuple(self.atoms)
         return tag, len(immutable_atoms), *immutable_atoms
 
+    @override
     def possible_widths(self) -> set[int]:
-        return {self.width}
+        max_offset = max(atom.relative_position for atom in self.atoms)
+        min_offset = min(atom.relative_position for atom in self.atoms)
+        return {(max_offset - min_offset) + 1}
 
 
 # @node_type('element')
@@ -185,6 +202,7 @@ class Lookup(Node):
 class Conjunction(Node):
     elements: Iterable[Node]
 
+    @override
     def possible_widths(self) -> set[int]:
         widths = (element.possible_widths() for element in self.elements)
         return set.intersection(*widths)
@@ -194,6 +212,7 @@ class Conjunction(Node):
 class Disjunction(Node):
     elements: Iterable[Node]
 
+    @override
     def possible_widths(self) -> set[int]:
         widths = (element.possible_widths() for element in self.elements)
         return set.union(*widths)
@@ -203,6 +222,7 @@ class Disjunction(Node):
 class Alternative(Node):
     elements: Iterable[Node]
 
+    @override
     def possible_widths(self) -> set[int]:
         widths = (element.possible_widths() for element in self.elements)
         return set.union(*widths)
@@ -212,6 +232,7 @@ class Alternative(Node):
 class Sequence(Node):
     elements: Seq[Node]
 
+    @override
     def possible_widths(self) -> set[int]:
         widths = {0}
         for element in self.elements:
@@ -231,14 +252,14 @@ class Subtraction(Node):
 @node_type()
 class Arbitrary(Node):
 
+    @override
     def possible_widths(self) -> set[int]:
         return {1}
 
 
 @node_type()
 class Epsilon(Node):
-    pass
 
+    @override
     def possible_widths(self) -> set[int]:
         return {0}
-
