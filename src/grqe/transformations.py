@@ -75,7 +75,7 @@ def distribute(node: Node, index: int) -> Node:
 # Canonical form
 # Remove neutral/absorbing elements (only Epsilon within Sequences)
 # Flatten nested (relies on Assoc)
-# Deduplicate operands (relies on Idemp)
+# Deduplicate operands (relies on Idemp (and technically commutative and associative)
 # Sort children to canonical form (relies on Comm)
 
 def canonical(root: Node) -> Node:
@@ -90,15 +90,10 @@ def order_children(root: Node) -> Node:
         return root
 
     children = (canonical(c) for c in root.children())
-    if root.is_commutative & root.is_idempotent:
+    if root.is_idempotent and (root.is_commutative and root.is_associative) :
         # Sort AND deduplicate children.
         children = sorted(set(children))
     return root.construct(children)
-
-
-# Canonical right now does not have different paths for idempotent or commutative ops.
-assert all(op.is_commutative == op.is_idempotent for op in Node.OPERATOR_TYPES), \
-    f'Implementation of {order_children.__name__} relies on all idempotent operators to also be commutative.'
 
 
 def remove_neutral_elements(root: Node) -> Node:
