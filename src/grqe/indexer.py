@@ -1,6 +1,8 @@
+import argparse
 import html
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, ClassVar, Iterable
@@ -217,15 +219,69 @@ def span_is_tiling(ranges: list[tuple[int, int]], token_count: int) -> bool:
     return True
 
 
+def create_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='encode',
+        description='Encode a corpus from .VRT files.',
+        add_help=True,
+    )
+    parser.add_argument(
+        'files',
+        nargs='*',
+        default=[],
+        type=str,
+        help='The .VRT files to encode.',
+    )
+    parser.add_argument(
+        '--corpus',
+        required=True,
+        type=str,
+        help='Directory for the encoded corpus.',
+    )
+    parser.add_argument(
+        '--columns',
+        nargs='*',
+        metavar='COLUMN',
+        default=[],
+        type=str,
+        help='The column names extracted from the .VRT file.',
+    )
+    parser.add_argument(
+        '--span',
+        nargs='*',
+        action='append',
+        metavar=('SPAN', 'ATTRIBUTES'),
+        default=[],
+        type=str,
+        help='The spans extracted from the .VRT file. '
+             'ATTRIBUTES can be repeated arbitrarily many times, specifying the extracted attributes.'
+    )
+    return parser
+
+
 def main():
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    columns = list(args.columns)
+    spans = {}
+    for span_definition in args.span:
+        span, *attributes = span_definition
+        spans[span] = set(attributes)
+
+    files = [Path(file) for file in args.files]
+    corpus = CorpusDir(Path(args.corpus))
+
+    if spans and not files:
+        print('No files were provided but spans are present.')
+        print('Try using  --  to separate input files from spans.')
+        sys.exit(1)
+
     encode_corpus(
-        CorpusDir(Path('/tmp/corpus/')),
-        ['id', 'form', 'lemma', 'upos', 'xpos', 'feats', 'head', 'deprel', 'deps', 'misc'],
-        {
-            'doc': {'id'},
-            's': {'sent_id', 'text', 'genre', 'source', 'location'}
-        },
-        [Path('/home/niklas/git/corpus-tool-comparison/data-vrt/bar_maibaam-ud.vrt')]
+        corpus,
+        columns,
+        spans,
+        files,
     )
 
 
