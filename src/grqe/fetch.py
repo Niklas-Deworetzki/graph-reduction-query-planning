@@ -22,6 +22,7 @@ class LookupStrategy(Protocol):
 
 @dataclass(frozen=True)
 class Attribute:
+    """feature @ offset = value"""
     feature: Feature
     offset: int
     value: FValue

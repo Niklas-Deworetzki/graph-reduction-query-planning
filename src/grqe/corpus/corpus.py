@@ -1,11 +1,14 @@
 import json
 import os
+import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Iterable, override
+from typing import ClassVar, Iterable, Optional, override
 
-from .disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
+from grqe.corpus.disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
+from grqe.corpus.index import BinaryIndex, UnaryIndex
+from grqe.types import BinarySignature, Symbol, UnarySignature
 
 CORPUS_DIR = Path(os.path.abspath(os.getcwd()))
 
@@ -18,7 +21,33 @@ class Corpus:
         self.name = name
 
         root = (corpora_dir if corpora_dir is not None else CORPUS_DIR) / name
-        self.base = CorpusDir(root)
+        self.base = CorpusDir(self, root)
+
+    def tokens(self) -> dict[str, AnnotationsDir]:
+        return self.base.tokens.annotations()
+
+    def spans(self) -> dict[str, dict[str, AnnotationsDir]]:
+        return {
+            span: dir.annotations()
+            for span, dir in self.base.spans.spans().items()
+        }
+
+    def unary_indexes(self) -> dict[UnarySignature, UnaryIndex]:
+        return self.base.indexes.unary_indexes
+
+    def unary_index(self, feature: str) -> Optional[UnaryIndex]:
+        signature = feature
+        return self.unary_indexes().get(signature)
+
+    def binary_indexes(self) -> dict[BinarySignature, BinaryIndex]:
+        return self.base.indexes.binary_indexes
+
+    def binary_index(self, feature1: str, distance: int, feature2: str) -> Optional[BinaryIndex]:
+        signature = (feature1, distance, feature2)
+        return self.binary_indexes().get(signature)
+
+    def __len__(self):
+        ...
 
 
 class DirNode(ABC):
@@ -69,11 +98,11 @@ class CorpusDir(DirNode):
     spans: SpansDir
     indexes: IndexDir
 
-    def __init__(self, base_dir: Path):
+    def __init__(self, corpus: Corpus, base_dir: Path):
         super().__init__(base_dir)
         self.tokens = TokensDir(self.path / 'tokens')
         self.spans = SpansDir(self.path / 'spans')
-        self.indexes = IndexDir(self.path / 'indexes')
+        self.indexes = IndexDir(corpus, self.path / 'indexes')
 
     @override
     def acquire(self):
@@ -123,6 +152,9 @@ class AnnotationsDir(DirNode):
         self.values.close()
         self.symbols = None
         self.values = None
+
+    def to_symbol(self, value: bytes) -> Symbol:
+        return self.symbols.to_symbol(value)
 
     def write_symbols(self, values: set[bytes]):
         SymbolCollection.build(self.symbols_path, values)
@@ -272,6 +304,34 @@ class SpansDir(DirNode):
 
 
 class IndexDir(DirNode):
+    BINARY_PATTERN = re.compile(r'(\w+)@(\d+)@(\w+)')
+
+    corpus: Corpus
+    unary_indexes: dict[UnarySignature, UnaryIndex]
+    binary_indexes: dict[BinarySignature, BinaryIndex]
+
+    def __init__(self, corpus: Corpus, path: Path):
+        super().__init__(path)
+        self.corpus = corpus
+
+        for p in self.path.iterdir():
+            if not p.is_dir():
+                continue
+            elif match := IndexDir.BINARY_PATTERN.fullmatch(p.name):
+                feature1, distance_str, feature2 = match.groups()
+                signature = (feature1, int(distance_str), feature2)
+                self.binary_indexes[signature] = BinaryIndex(self.corpus, p, signature)
+            else:
+                signature = p.name
+                self.unary_indexes[signature] = UnaryIndex(self.corpus, p, signature)
+
+    def filename(self, signature: UnarySignature | BinarySignature) -> str:
+        match signature:
+            case UnarySignature():
+                return str(signature)
+            case BinarySignature():
+                return signature[0] + '@' + str(signature[1]) + '@' + signature[2]
+        raise ValueError(f'Unsupported index signature: {signature}')
 
     @override
     def acquire(self):
@@ -279,4 +339,21 @@ class IndexDir(DirNode):
 
     @override
     def close(self):
-        pass
+        for index in self.unary_indexes.values(): index.close()
+        for index in self.binary_indexes.values(): index.close()
+
+    def unary(self, feature: str) -> UnaryIndex:
+        signature = feature
+        if signature not in self.unary_indexes:
+            path = self.path / feature
+            path.mkdir(parents=True, exist_ok=True)
+            self.unary_indexes[signature] = UnaryIndex(self.corpus, path, signature)
+        return self.unary_indexes[signature]
+
+    def binary(self, feature1: str, distance: int, feature2: str) -> BinaryIndex:
+        signature = (feature1, distance, feature2)
+        if signature not in self.unary_indexes:
+            path = self.path / f'{feature1}@{distance}@{feature2}'
+            path.mkdir(parents=True, exist_ok=True)
+            self.binary_indexes[signature] = BinaryIndex(self.corpus, path, signature)
+        return self.binary_indexes[signature]

@@ -1,5 +1,6 @@
 import math
-from typing import Callable, Literal
+from pathlib import Path
+from typing import Callable, Iterable, Literal
 
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,13 @@ type ByteOrder = Literal['little', 'big']
 type TypeFormat = Literal['B', 'H', 'I', 'Q']
 
 TYPE_CODES: dict[int, TypeFormat] = {1: 'B', 2: 'H', 4: 'I', 8: 'Q'}
+
+
+def add_suffix(path: Path, suffix: str) -> Path:
+    """Add the suffix to the path, unless it's already there."""
+    if path.suffix != suffix:
+        path = Path(str(path) + suffix)
+    return path
 
 
 ###############################################################################
@@ -93,3 +101,17 @@ def binsearch_range[C: SupportsRichComparison](start: int, end: int, start_key: 
     start = binsearch_first(start, end, start_key, lookup, error)
     end = binsearch_last(start, end, end_key, lookup, error)
     return start, end
+
+
+try:
+    import tqdm
+
+
+    def progress[T](it: Iterable[T], description: str, nested_level: int = 0) -> Iterable[T]:
+        should_remain = nested_level > 0
+        return tqdm.tqdm(it, desc=description, position=nested_level, leave=should_remain)
+
+except ImportError:
+
+    def progress[T](it: Iterable[T], description: str, nested_level: int = 0) -> Iterable[T]:
+        return it

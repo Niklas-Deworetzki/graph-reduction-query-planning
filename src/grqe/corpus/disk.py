@@ -2,17 +2,11 @@ import json
 import sys
 from abc import ABC, abstractmethod
 from mmap import mmap
-from pathlib import Path
-from typing import Any, ClassVar, Iterable, Iterator, Self, override
+from typing import Any, ClassVar, Iterator, Self, override
 
 from .util import *
 
-
-def add_suffix(path: Path, suffix: str) -> Path:
-    """Add the suffix to the path, unless it's already there."""
-    if path.suffix != suffix:
-        path = Path(str(path) + suffix)
-    return path
+type Symbol = int
 
 
 def do_mmap(file: Path, itemsize: int) -> memoryview:
@@ -56,6 +50,7 @@ class IntArray(OnDisk, Array[int]):
     DEFAULT_ITEMSIZE: ClassVar[int] = 4
 
     path: Path
+    itemsize: int
     _array: memoryview
 
     def __init__(self, path: Path):
@@ -63,8 +58,8 @@ class IntArray(OnDisk, Array[int]):
             config = json.load(configfile)
         assert config['byteorder'] == sys.byteorder, f'Byte order "{config['byteorder']}" is not supported.'
 
-        itemsize = config['itemsize'] or IntArray.DEFAULT_ITEMSIZE
-        self._array = do_mmap(IntArray.getpath(path), itemsize)
+        self.itemsize = config['itemsize'] or IntArray.DEFAULT_ITEMSIZE
+        self._array = do_mmap(IntArray.getpath(path), self.itemsize)
         self.path = path
 
     def __len__(self) -> int:
@@ -72,6 +67,9 @@ class IntArray(OnDisk, Array[int]):
 
     def __getitem__(self, item):
         return self.__getitem__(item)
+
+    def slice(self, j: int, k: int) -> memoryview:
+        return self._array[j:k]
 
     def __setitem__(self, key, value):
         self._array.__setitem__(key, value)
@@ -174,6 +172,9 @@ class BytesArray(OnDisk, Array[bytes]):
         start, end = arr[i], arr[i + 1]
         return self._rawdata[start:end - 1]
 
+    def slice(self, j: int, k: int) -> list[bytes]:
+        return [self[i] for i in range(j, k)]
+
     def __setitem__(self, i: int, value: bytes) -> None:
         raise TypeError(f'{self.__class__.__name__} does not support item assignment')
 
@@ -208,9 +209,6 @@ class BytesArray(OnDisk, Array[bytes]):
     @staticmethod
     def getpaths(path: Path) -> tuple[Path, Path]:
         return add_suffix(path, '.starts'), add_suffix(path, '.rawdata')
-
-
-type Symbol = int
 
 
 class SymbolCollection(OnDisk, Array[bytes]):
@@ -269,6 +267,10 @@ class IntBytesMap(OnDisk):
         pos = binsearch(0, len(self._keys) - 1, key, lambda k: self._keys[k])
         return self._values[pos]
 
+    def slice(self, start_key: int, end_key: int) -> list[bytes]:
+        start, end = binsearch_range(0, len(self._keys) - 1, start_key, end_key, lambda k: self._keys[k])
+        return self._values.slice(start, end + 1)
+
     def __setitem__(self, key: int, value: bytes) -> None:
         raise TypeError('IntBytesMap does not support item assignment')
 
@@ -277,10 +279,11 @@ class IntBytesMap(OnDisk):
         self._values.close()
 
     @staticmethod
-    def build(path: Path, keys: Iterable[int], values: Iterable[bytes]) -> None:
+    def build(path: Path, keys: list[int], values: list[bytes],
+              size: int = None, max_value: int = None) -> None:
         # Note: the 'keys' must be sorted!
         keyspath, valspath = IntBytesMap.getpaths(path)
-        IntArray.build(keyspath, keys)
+        IntArray.build(keyspath, keys, size=size, max_value=max_value)
         BytesArray.build(valspath, values)
 
     @staticmethod
@@ -294,7 +297,6 @@ class RangeArray(OnDisk, Array[tuple[int, int]], ABC):
     @abstractmethod
     def build(cls, path: Path, ranges: Iterable[tuple[int, int]]) -> int:
         ...
-
 
 
 class SparseRangeArray(RangeArray):
