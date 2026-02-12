@@ -9,8 +9,9 @@ if TYPE_CHECKING:
 
 type ByteOrder = Literal['little', 'big']
 type TypeFormat = Literal['B', 'H', 'I', 'Q']
+type IntegerSize = Literal[1, 2, 4, 8]
 
-TYPE_CODES: dict[int, TypeFormat] = {1: 'B', 2: 'H', 4: 'I', 8: 'Q'}
+TYPE_CODES: dict[IntegerSize, TypeFormat] = {1: 'B', 2: 'H', 4: 'I', 8: 'Q'}
 
 
 def add_suffix(path: Path, suffix: str) -> Path:
@@ -23,19 +24,17 @@ def add_suffix(path: Path, suffix: str) -> Path:
 ###############################################################################
 ## N:o bytes needed to store integer values
 
-def get_integer_size(max_value: int) -> int:
+def get_integer_size(max_value: int) -> IntegerSize:
     """The minimal n:o bytes needed to store values `0...max_value`"""
     itemsize = math.ceil(math.log(max_value + 1, 2) / 8)
-    assert 1 <= itemsize <= 8
-    if itemsize == 3:
-        return 4
-    elif itemsize > 4:
-        return 8
+    for i in sorted(TYPE_CODES.keys()):
+        if itemsize <= i:
+            return i
     else:
-        return itemsize
+        raise ValueError(f'Value {max_value} exceeds 64 bit limit.')
 
 
-def get_typecode(itemsize: int) -> TypeFormat:
+def get_typecode(itemsize: IntegerSize) -> TypeFormat:
     """Returns the memoryview typecode for the given bytesize of unsigned integers"""
     return TYPE_CODES[itemsize]
 
