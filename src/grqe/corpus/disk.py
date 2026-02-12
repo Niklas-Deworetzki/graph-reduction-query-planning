@@ -4,12 +4,12 @@ from abc import ABC, abstractmethod
 from mmap import mmap
 from typing import Any, ClassVar, Iterator, Self, override
 
-from .util import *
+from grqe.util import *
 
 type Symbol = int
 
 
-def do_mmap(file: Path, itemsize: int) -> memoryview:
+def do_mmap(file: Path, itemsize: IntegerSize) -> memoryview:
     with file.open('r+b') as file:
         try:
             map = mmap(file.fileno(), 0)
@@ -236,11 +236,7 @@ class SymbolCollection(OnDisk, Array[bytes]):
         return self[symbol]
 
     def to_symbol(self, name: bytes) -> Symbol:
-        try:
-            ba = self._bytesarray
-            return binsearch(0, len(self) - 1, name, lambda i: ba[i])
-        except (KeyError, IndexError, ValueError):
-            raise ValueError(f'Symbol does not exist: {name.decode(errors='ignore')}')
+        return binsearch(0, len(self) - 1, name, self._bytesarray.__getitem__)
 
     @staticmethod
     def build(path: Path, names: Iterable[bytes]) -> int:

@@ -4,14 +4,14 @@ from typing import Generator, Iterator
 
 from pyroaring import BitMap
 
-from grqe.corpus import IntArray, IntBytesMap
-from grqe.corpus.corpus import Corpus
+from grqe.corpus.disk import IntArray, IntBytesMap
+from grqe.corpus.corpus import Corpus, IndexDir
 from grqe.corpus.index import Index
-from grqe.types import BinarySignature, UnarySignature
+from grqe.types import BinarySignature, IndexSignature, UnarySignature
 
 
 def collect_for_unary(corpus: Corpus, signature: UnarySignature) -> Generator[tuple[int, int]]:
-    yield from enumerate(corpus.tokens()[signature].values)
+    yield from enumerate(corpus.tokens()[signature.feature].values)
 
 
 def collect_for_binary(corpus: Corpus, signature: BinarySignature,
@@ -74,3 +74,13 @@ def build_index_via_bitmaps(
 
     IntBytesMap.build(path / Index.BIGSET_FILENAME, big_keys, big_values, size=size, max_value=max_value)
     return size
+
+
+def build_index(corpus: Corpus, signature: IndexSignature, min_frequency: int = None):
+    index_dir = corpus.base.indexes.path / IndexDir.filename(signature)
+    match signature:
+        case UnarySignature():
+            collect = collect_for_unary(corpus, signature)
+        case BinarySignature():
+            collect = collect_for_binary(corpus, signature, min_frequency)
+    build_index_via_bitmaps(index_dir, collect)

@@ -4,9 +4,9 @@ from typing import Any, ClassVar, Iterable, Optional, Self
 
 from pyroaring import BitMap
 
-from grqe.corpus import IntArray, IntBytesMap
+from grqe.corpus.disk import IntArray, IntBytesMap
 from grqe.corpus.corpus import Corpus
-from grqe.corpus.util import binsearch_range
+from grqe.util import binsearch_range
 from grqe.types import BinarySignature, Symbol, UnarySignature
 
 
@@ -54,7 +54,6 @@ class Index:
             self.smallsets.close()
         if self.bigsets is not None:
             self.bigsets.close()
-        self._savemetadata()
 
     def do_search(self, ranges: Iterable[tuple[int, int]], offset: int = 0) -> BitMap:
         result = BitMap()
@@ -103,7 +102,7 @@ class UnaryIndex(Index):
 
     def __init__(self, corpus: Corpus, path: Path, signature: UnarySignature):
         super().__init__(corpus, path)
-        self.feature = signature
+        self.feature = signature.feature
 
     def search(self, sym: Symbol, offset: int = 0) -> BitMap:
         return self.do_search([(sym, sym)], offset)
