@@ -1,13 +1,16 @@
 from dataclasses import dataclass
-from typing import Iterable, Protocol, Tuple
+from typing import Iterable, Optional, Protocol, Tuple
 
 import networkx as nx
 from pyroaring import BitMap
 
+from grqe.corpus.corpus import AnnotationsDir, Corpus
+from grqe.corpus.disk import IntArray
+from grqe.corpus.index import BinaryIndex, UnaryIndex
 from grqe.debug import LOGGER, profile
 from grqe.fputil import fold
-from grqe.korp import Corpus, FValue, Feature, Index
 from grqe.query import Lookup
+from grqe.types import Feature, Symbol
 
 
 class LookupStrategy(Protocol):
@@ -25,36 +28,40 @@ class Attribute:
     """feature @ offset = value"""
     feature: Feature
     offset: int
-    value: FValue
+    value: Symbol
 
 
 type Edge = Tuple[Attribute, Attribute]
 type WeightedEdge = Tuple[Attribute, Attribute, int]
 
 
+def linear_search(data: IntArray, symbol: Symbol) -> BitMap:
+    bitmap = BitMap()
+    for pos, value in enumerate(data):
+        if symbol == value:
+            bitmap.add(pos)
+    return bitmap
+
+
 class GraphBasedIndexLookup:
-    unary_indexes: dict[Feature, Index]
-    binary_indexes: dict[Tuple[Feature, int, Feature], Index] = dict()
+    unary_indexes: dict[str, UnaryIndex]
+    binary_indexes: dict[tuple[str, int, str], BinaryIndex] = dict()
+    features: dict[str, AnnotationsDir]
 
     def __init__(self, corpus: Corpus):
         self.corpus = corpus
-        self.unary_indexes = dict()
-        self.binary_indexes = dict()
-
-        for index in Index.indexes_for(corpus):
-            key = index.template.template
-            match len(key):
-                case 1:
-                    assert key[0].offset == 0, 'Feature in unary index is expected to be at offset 0!'
-                    self.unary_indexes[key[0].feature] = index
-                case 2:
-                    assert key[0].offset == 0, 'Offset of first feature in binary index is expected to be 0!'
-                    assert key[1].offset >= 0, 'Second feature in binary index cannot be negative!'
-                    self.binary_indexes[(key[0].feature, key[1].offset, key[1].feature)] = index
+        self.features = corpus.tokens()
+        self.unary_indexes = {
+            key.feature: value
+            for key, value in corpus.unary_indexes().items()
+        }
+        self.binary_indexes = {
+            (key.feature1, key.distance, key.feature2): value
+            for key, value in corpus.binary_indexes().items()
+        }
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
-            LOGGER.warning(
-                f'No index for feature {unresolved_feature.decode()}. Searching for it will not be possible.')
+            LOGGER.warning(f'No index for feature {unresolved_feature}. Searching will be slow.')
 
     def _prefetch(self, attributes: Iterable[Attribute]) -> dict[Edge, BitMap]:
         prefetched = dict()
@@ -68,32 +75,39 @@ class GraphBasedIndexLookup:
                 binary_index = self.binary_indexes.get((a_l.feature, distance, a_r.feature))
 
                 if a_l is a_r:
-                    symbol = self.corpus.get_symbol(a_l.feature, a_l.value)
-                    index = self.unary_indexes[a_l.feature]
-
-                    result = index.search([symbol], a_l.offset)
-                    prefetched[a_l, a_l] = result
+                    if index := self.unary_indexes.get(a_l.feature):
+                        result = index.search(a_l.value, a_l.offset)
+                        prefetched[a_l, a_l] = result
+                    else:
+                        data = self.features[a_l.feature].values
+                        prefetched[a_l, a_r] = linear_search(data, a_l.value)
 
                 elif binary_index:
-                    symbol_1 = self.corpus.get_symbol(a_l.feature, a_l.value)
-                    symbol_2 = self.corpus.get_symbol(a_r.feature, a_r.value)
-
-                    result = binary_index.search([symbol_1, symbol_2], a_l.offset)
+                    result = binary_index.search(a_l.value, a_r.value, a_l.offset)
                     prefetched[a_l, a_r] = result
 
         LOGGER.debug(f'Fetched data from {len(prefetched)} indexes.')
         return prefetched
 
+    def _prepare_attributes(self, lookup: Lookup, offset: int) -> Optional[list[Attribute]]:
+        attributes: list[Attribute] = []
+        for atom in lookup.atoms:
+            annotations = self.features.get(atom.key)
+            if annotations is None:  # Unknown attribute.
+                return None
+
+            symbol = annotations.to_symbol(atom.value.encode())
+            if symbol == -1:  # Unknown value for attribute.
+                return None
+
+            attributes.append(Attribute(atom.key, atom.relative_position - offset, symbol))
+        return attributes
+
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
         # Precompute attributes
-        attributes = [
-            Attribute(
-                atom.key.encode(),
-                atom.relative_position - offset,
-                atom.value.encode(),
-            )
-            for atom in lookup.atoms
-        ]
+        attributes: list[Attribute] = self._prepare_attributes(lookup, offset)
+        if attributes is None:
+            return BitMap()
 
         # Prefetch index lookups
         with profile('prefetching'):
