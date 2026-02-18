@@ -93,4 +93,5 @@ def build_index(corpus: Corpus, signature: IndexSignature, min_frequency: int = 
             collect = collect_for_unary(corpus, signature)
         case BinarySignature():
             collect = collect_for_binary(corpus, signature, min_frequency)
+    index_dir.mkdir(parents=True, exist_ok=True)
     build_index_via_bitmaps(index_dir, collect)
