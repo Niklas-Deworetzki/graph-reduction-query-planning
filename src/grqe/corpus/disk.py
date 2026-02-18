@@ -2,20 +2,22 @@ import json
 import sys
 from abc import ABC, abstractmethod
 from mmap import mmap
-from typing import Any, ClassVar, Iterator, Self, override
+from typing import Any, ClassVar, Iterator, Optional, Self, override
 
 from grqe.util import *
 
 type Symbol = int
 
 
-def do_mmap(file: Path, itemsize: IntegerSize) -> memoryview:
+def do_mmap(file: Path, itemsize: Optional[IntegerSize] = None) -> memoryview | mmap | bytearray:
     with file.open('r+b') as file:
         try:
             map = mmap(file.fileno(), 0)
         except ValueError:  # When file is empty.
             map = bytearray(0)
-    return memoryview(map).cast(get_typecode(itemsize))
+    if itemsize is not None:
+        return memoryview(map).cast(get_typecode(itemsize))
+    return map
 
 
 class OnDisk(ABC):
@@ -161,8 +163,7 @@ class BytesArray(OnDisk, Array[bytes]):
     def __init__(self, path: Path) -> None:
         startspath, rawpath = self.getpaths(path)
         self._starts = IntArray(startspath)
-        with rawpath.open('r+b') as file:
-            self._rawdata = mmap(file.fileno(), 0)
+        self._rawdata = do_mmap(rawpath)
 
     def __len__(self) -> int:
         return len(self._starts) - 1
