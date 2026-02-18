@@ -87,7 +87,7 @@ class IntArray(OnDisk, Array[int]):
             obj.close()
 
     @staticmethod
-    def _write_config(path: Path, itemsize: int, size: int):
+    def _write_config(path: Path, size: int, itemsize: int):
         with open(IntArray.getconfigpath(path), 'w') as configfile:
             full_config = {
                 'itemsize': itemsize,
@@ -105,7 +105,7 @@ class IntArray(OnDisk, Array[int]):
         elif itemsize is None:
             itemsize = IntArray.DEFAULT_ITEMSIZE
 
-        IntArray._write_config(path, itemsize, size)
+        IntArray._write_config(path, size, itemsize)
         with open(IntArray.getpath(path), 'wb') as file:
             file.truncate(size * itemsize)
         return IntArray(path)
@@ -120,28 +120,27 @@ class IntArray(OnDisk, Array[int]):
                 values = list(values)
                 size = len(values)
 
-        array = IntArray.create(size, path, max_value, itemsize)
-
-        realsize = 0
-        for val in values:
-            array[realsize] = val
-            realsize += 1
-        array.close()
+        with IntArray.create(size, path, max_value, itemsize) as array:
+            realsize = 0
+            for val in values:
+                array[realsize] = val
+                realsize += 1
 
         if realsize < size:
             array.truncate(realsize)
         return realsize
 
     def truncate(self, newsize: int) -> None:
-        itemsize = self._array.itemsize
-
-        if isinstance(self._array.obj, mmap):
-            self.close()
-            with open(self.path, 'r+b') as file:
-                file.truncate(newsize * itemsize)
-            self._array = do_mmap(self.path, itemsize)
-
-        IntArray._write_config(self.path, itemsize, newsize)
+        try:
+            len(self._array)  # Raises ValueError, if self._array is already released.
+        except ValueError:
+            binary_file = IntArray.getpath(self.path)
+            with open(binary_file, 'r+b') as file:
+                file.truncate(newsize * self.itemsize)
+            IntArray._write_config(self.path, newsize, self.itemsize)
+            return
+        else:
+            raise ValueError('Unable to truncate IntArray that is not released.')
 
     @staticmethod
     def getpath(path: Path) -> Path:
@@ -189,7 +188,8 @@ class BytesArray(OnDisk, Array[bytes]):
             yield raw[start:end - 1]
 
     def close(self) -> None:
-        self._rawdata.close()
+        if isinstance(self._rawdata, mmap):
+            self._rawdata.close()
         self._starts.close()
 
     @staticmethod
