@@ -1,8 +1,7 @@
 import re
 from abc import ABC
-from dataclasses import astuple, dataclass
+from dataclasses import dataclass
 from typing import ClassVar
-
 
 type Feature = str
 type FValue = bytes
@@ -11,7 +10,6 @@ type Symbol = int
 
 
 class IndexSignature(ABC):
-    BINARY_PATTERN: ClassVar[re.Pattern] = re.compile(r'(\w+)@(\d+)@(\w+)')
 
     @staticmethod
     def parse(s: str) -> IndexSignature:
