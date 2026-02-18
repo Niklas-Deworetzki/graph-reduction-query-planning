@@ -77,7 +77,7 @@ def encode_corpus(
     parser = VrtParser(columns, spans)
 
     collector = AnnotationCollector(columns, spans)
-    token_count = parser.parse(CorpusHandler(collector.on_token, collector.on_span), *sources)
+    token_count = parser.parse(CorpusHandler(collector.on_token, collector.on_span), sources)
 
     corpus.tokens.persist_token_count(token_count)
     for column in columns:
@@ -97,7 +97,7 @@ def encode_corpus(
             )
 
     encoder = AnnotationEncoder(corpus, columns, spans)
-    parser.parse(CorpusHandler(encoder.on_token, encoder.on_span), *sources)
+    parser.parse(CorpusHandler(encoder.on_token, encoder.on_span), sources)
 
 
 def span_is_tiling(ranges: list[tuple[int, int]], token_count: int) -> bool:
