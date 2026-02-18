@@ -61,7 +61,7 @@ def run_index(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> b
             unary.append(UnarySignature(feature))
 
         if args.all_unary:
-            unary.extend(map(UnarySignature, args.all_unary))
+            unary.extend(map(UnarySignature, known_features))
         return unary
 
     def collect_binary_indexes(known_features: set[str]) -> list[BinarySignature]:
