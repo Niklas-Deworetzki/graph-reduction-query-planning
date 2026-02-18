@@ -19,7 +19,7 @@ def extract_opening_tag(tag: str) -> tuple[str, dict[str, bytes]]:
         return tag[1:end_of_tag], {}
     else:
         attributes = {
-            match.group(1): html.unescape(match.group(2).encode())
+            match.group(1): html.unescape(match.group(2)).encode()
             for match in XML_ATTRIBUTE_REGEX.finditer(tag, end_of_name)
         }
         return tag[1:end_of_name], attributes
