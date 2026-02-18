@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -74,10 +75,12 @@ def encode_corpus(
         spans: dict[str, set[str]],
         sources: Iterable[Path]
 ):
-    parser = VrtParser(columns, spans)
+    print('Preparing files...', file=sys.stderr)
+    parser = VrtParser(columns, spans, sources)
 
+    print('Collecting symbols...', file=sys.stderr)
     collector = AnnotationCollector(columns, spans)
-    token_count = parser.parse(CorpusHandler(collector.on_token, collector.on_span), sources)
+    token_count = parser.process(CorpusHandler(collector.on_token, collector.on_span))
 
     corpus.tokens.persist_token_count(token_count)
     for column in columns:
@@ -96,8 +99,9 @@ def encode_corpus(
                 collector.span_data[span][span_annotation]
             )
 
+    print('Encoding data...', file=sys.stderr)
     encoder = AnnotationEncoder(corpus, columns, spans)
-    parser.parse(CorpusHandler(encoder.on_token, encoder.on_span), sources)
+    parser.process(CorpusHandler(encoder.on_token, encoder.on_span))
 
 
 def span_is_tiling(ranges: list[tuple[int, int]], token_count: int) -> bool:

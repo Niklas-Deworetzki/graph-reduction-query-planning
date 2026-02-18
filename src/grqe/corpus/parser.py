@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, ClassVar, Iterable
 
+from grqe.util import get_linecount, progress, tree_files
+
 XML_NAME_START_CHAR = r'[_:a-zA-Z\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD]'
 XML_NAME_CHAR = fr'(?:{XML_NAME_START_CHAR}|[\-.0-9\u00B7\u0300-\u036F\u203F-\u2040])'
 XML_NAME = fr'(?:{XML_NAME_START_CHAR}{XML_NAME_CHAR}*)'
@@ -31,41 +33,35 @@ class CorpusHandler:
     on_span: Callable[[str, int, int, dict[str, bytes]], None]
 
 
-@dataclass(frozen=True)
 class VrtParser:
     NO_VALUE: ClassVar[bytes] = b''
 
     columns: list[str]
     spans: dict[str, set[str]]
+    files: list[tuple[Path, int]]
 
-    def parse(
-            self,
-            callback: CorpusHandler,
-            paths: Iterable[Path],
-            included_filetypes: set[str] = frozenset({'.vrt'})
-    ) -> int:
-        def collect_corpus_files():
-            for path in paths:
-                if path.is_file():
-                    yield path
+    def __init__(self, columns: list[str], spans: dict[str, set[str]], files: Iterable[Path]):
+        self.columns = columns
+        self.spans = spans
 
-                else:
-                    for (dirpath, _, filenames) in os.walk(path):
-                        for filename in filenames:
-                            if any(filename.endswith(suffix) for suffix in included_filetypes):
-                                yield Path(os.path.join(dirpath, filename))
+        self.files = [
+            (file, get_linecount(file))
+            for file in tree_files(files, {'.vrt'})
+        ]
 
+    def process(self, callback: CorpusHandler) -> int:
         token_count = 0
-        for file in collect_corpus_files():
-            token_count += self._parse_vrt(file, token_count, callback)
+        for file, line_count in self.files:
+            token_count += self._parse_vrt(file, line_count, token_count, callback)
         return token_count
 
-    def _parse_vrt(self, file: Path, token_count: int, callback: CorpusHandler) -> int:
+    def _parse_vrt(self, file: Path, line_count: int, token_count: int, callback: CorpusHandler) -> int:
         open_spans: list[str] = []
         open_span_data: list[tuple[int, dict[str, bytes]]] = []
 
         with file.open('r') as f:
-            for lineno, content in enumerate(f, start=1):
+            lines = progress(f, file.name, unit=' lines', unit_scale=True, total=line_count)
+            for lineno, content in enumerate(lines, start=1):
                 if content.isspace():
                     continue
 

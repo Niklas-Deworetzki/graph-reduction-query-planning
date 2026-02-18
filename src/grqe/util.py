@@ -1,4 +1,5 @@
 import math
+import os
 from pathlib import Path
 from typing import Callable, Iterable, Literal
 
@@ -102,15 +103,36 @@ def binsearch_range[C: SupportsRichComparison](start: int, end: int, start_key: 
     return start, end
 
 
+def tree_files(roots: Iterable[Path], included_file_types: Iterable[str]):
+    for path in roots:
+        if path.is_file():
+            yield path
+        else:
+            for (dirpath, _, filenames) in os.walk(path):
+                for filename in filenames:
+                    if any(filename.endswith(suffix) for suffix in included_file_types):
+                        yield Path(os.path.join(dirpath, filename))
+
+
+def get_linecount(file: Path) -> int:
+    try:
+        with file.open('r') as f:
+            lineno = 0
+            for _ in f:
+                lineno += 1
+            return lineno
+    except IOError:
+        return 0
+
+
 try:
     import tqdm
 
 
-    def progress[T](it: Iterable[T], description: str, nested_level: int = 0) -> Iterable[T]:
-        should_remain = nested_level > 0
-        return tqdm.tqdm(it, desc=description, position=nested_level, leave=should_remain)
+    def progress[T](it: Iterable[T], description: str, **kwargs) -> Iterable[T]:
+        return tqdm.tqdm(it, desc=description, **kwargs)
 
 except ImportError:
 
-    def progress[T](it: Iterable[T], description: str, nested_level: int = 0) -> Iterable[T]:
+    def progress[T](it: Iterable[T], description: str, **kwargs) -> Iterable[T]:
         return it
