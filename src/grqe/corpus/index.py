@@ -5,9 +5,8 @@ from typing import Any, ClassVar, Iterable, Optional, Self
 from pyroaring import BitMap
 
 from grqe.corpus.disk import IntArray, IntBytesMap
-from grqe.corpus.corpus import Corpus
+from grqe.type_definitions import Symbol
 from grqe.util import binsearch_range
-from grqe.types import BinarySignature, Symbol, UnarySignature
 
 
 ################################################################################
@@ -16,7 +15,6 @@ from grqe.types import BinarySignature, Symbol, UnarySignature
 ## This is a kind of modified suffix array - a "pruned" SA if you like
 
 class Index:
-    corpus: Corpus
     path: Path
     smallsets: Optional[IntArray]
     bigsets: Optional[IntBytesMap]
@@ -31,8 +29,7 @@ class Index:
         except FileNotFoundError:
             return None
 
-    def __init__(self, corpus: Corpus, path: Path) -> None:
-        self.corpus = corpus
+    def __init__(self, path: Path) -> None:
         self.path = path
 
         self.smallsets = Index.init_io(lambda: IntArray(self.path / Index.SMALLSET_FILENAME))
@@ -98,18 +95,18 @@ class Index:
 
 
 class UnaryIndex(Index):
-    feature: str
+    feature: IntArray
 
-    def __init__(self, corpus: Corpus, path: Path, signature: UnarySignature):
-        super().__init__(corpus, path)
-        self.feature = signature.feature
+    def __init__(self, path: Path, feature: IntArray):
+        super().__init__(path)
+        self.feature = feature
 
     def search(self, sym: Symbol, offset: int = 0) -> BitMap:
         return self.do_search([(sym, sym)], offset)
 
     def get_smallset_searchkey(self) -> Callable[[int], int]:
         assert self.smallsets
-        features = self.corpus.tokens()[self.feature].values
+        features = self.feature
         index = self.smallsets
 
         def search_key(k: int) -> int:
@@ -119,16 +116,16 @@ class UnaryIndex(Index):
 
 
 class BinaryIndex(Index):
-    feature1: str
+    feature1: IntArray
     distance: int
-    feature2: str
+    feature2: IntArray
 
     bitshift: int
 
-    def __init__(self, corpus: Corpus, path: Path, signature: BinarySignature):
-        super().__init__(corpus, path)
-        self.feature1, self.distance, self.feature2 = signature
-        self.bitshift = self.corpus.tokens()[self.feature2].values.itemsize * 8
+    def __init__(self, path: Path, feature1: IntArray, distance: int, feature2: IntArray):
+        super().__init__(path)
+        self.feature1, self.distance, self.feature2 = feature1, distance, feature2
+        self.bitshift = self.feature2.itemsize * 8
 
     def search(self, sym1: Symbol, sym2: Symbol, offset: int = 0) -> BitMap:
         key = (sym1 << self.bitshift) + sym2
@@ -137,8 +134,7 @@ class BinaryIndex(Index):
     def get_smallset_searchkey(self) -> Callable[[int], int]:
         assert self.smallsets
 
-        features1 = self.corpus.tokens()[self.feature1].values
-        features2 = self.corpus.tokens()[self.feature2].values
+        features1, features2 = self.feature1, self.feature2
         index = self.smallsets
 
         def search_key(k: int) -> int:

@@ -1,13 +1,14 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Iterable, Optional, override
+from typing import ClassVar, Iterable, Optional, Self, override
 
 from grqe.corpus.disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
 from grqe.corpus.index import BinaryIndex, Index, UnaryIndex
-from grqe.types import BinarySignature, Feature, IndexSignature, Symbol, UnarySignature
+from grqe.type_definitions import BinarySignature, Feature, IndexSignature, Symbol, UnarySignature
 
 CORPUS_DIR = Path(os.path.abspath(os.getcwd()))
 
@@ -21,6 +22,15 @@ class Corpus:
 
         root = (corpora_dir if corpora_dir is not None else CORPUS_DIR) / name
         self.base = CorpusDir(self, root)
+
+    @contextmanager
+    def lock(self) -> Self:
+        # TODO: Actually implement some locking logic
+        try:
+            self.base.acquire()
+            yield self
+        finally:
+            self.base.release()
 
     def get_symbol(self, feature: Feature, value: bytes) -> Symbol:
         return self.base.tokens.annotation(feature).to_symbol(value)
@@ -73,14 +83,14 @@ class DirNode(ABC):
         return self
 
     def __exit__(self, *_):
-        self.close()
+        self.release()
 
     @abstractmethod
     def acquire(self):
         ...
 
     @abstractmethod
-    def close(self):
+    def release(self):
         ...
 
     def load_metadata(self, path: Path = None) -> dict:
@@ -116,10 +126,10 @@ class CorpusDir(DirNode):
         self.indexes.acquire()
 
     @override
-    def close(self):
-        self.tokens.close()
-        self.spans.close()
-        self.indexes.close()
+    def release(self):
+        self.tokens.release()
+        self.spans.release()
+        self.indexes.release()
 
 
 class AnnotationsDir(DirNode):
@@ -151,7 +161,7 @@ class AnnotationsDir(DirNode):
         self.values = IntArray(self.values_path)
 
     @override
-    def close(self):
+    def release(self):
         """Release the symbols and values for this annotation."""
         self.symbols.close()
         self.values.close()
@@ -196,8 +206,8 @@ class TokensDir(DirNode):
         for annotation in self.managed_annotations.values(): annotation.acquire()
 
     @override
-    def close(self):
-        for annotation in self.managed_annotations.values(): annotation.close()
+    def release(self):
+        for annotation in self.managed_annotations.values(): annotation.release()
 
     def annotations(self) -> dict[str, AnnotationsDir]:
         return self.managed_annotations
@@ -250,8 +260,8 @@ class SpanDir(DirNode):
         self.ranges = self.RANGES_CONSTRUCTORS[SpanType(span_type)](self.ranges_path)
 
     @override
-    def close(self):
-        for annotation in self.managed_annotations.values(): annotation.close()
+    def release(self):
+        for annotation in self.managed_annotations.values(): annotation.release()
 
         self.ranges.close()
         self.ranges = None
@@ -294,8 +304,8 @@ class SpansDir(DirNode):
         for span in self.managed_spans.values(): span.acquire()
 
     @override
-    def close(self):
-        for span in self.managed_spans.values(): span.close()
+    def release(self):
+        for span in self.managed_spans.values(): span.release()
 
     def spans(self) -> dict[str, SpanDir]:
         return self.managed_spans
@@ -316,17 +326,8 @@ class IndexDir(DirNode):
     def __init__(self, corpus: Corpus, path: Path):
         super().__init__(path)
         self.corpus = corpus
-
-        for p in self.path.iterdir():
-            if not p.is_dir():
-                continue
-            else:
-                signature = IndexSignature.parse(p.name)
-                match signature:
-                    case UnarySignature():
-                        self.unary_indexes[signature] = UnaryIndex(self.corpus, p, signature)
-                    case BinarySignature():
-                        self.binary_indexes[signature] = BinaryIndex(self.corpus, p, signature)
+        self.unary_indexes = {}
+        self.binary_indexes = {}
 
     @staticmethod
     def filename(signature: IndexSignature) -> str:
@@ -334,10 +335,22 @@ class IndexDir(DirNode):
 
     @override
     def acquire(self):
-        pass
+        for p in self.path.iterdir():
+            if not p.is_dir():
+                continue
+            else:
+                signature = IndexSignature.parse(p.name)
+                match signature:
+                    case UnarySignature():
+                        feature = self.corpus.tokens()[signature.feature].values
+                        self.unary_indexes[signature] = UnaryIndex(p, feature)
+                    case BinarySignature():
+                        feature1 = self.corpus.tokens()[signature.feature1].values
+                        feature2 = self.corpus.tokens()[signature.feature2].values
+                        self.binary_indexes[signature] = BinaryIndex(p, feature1, signature.distance, feature2)
 
     @override
-    def close(self):
+    def release(self):
         for index in self.unary_indexes.values(): index.close()
         for index in self.binary_indexes.values(): index.close()
 

@@ -7,7 +7,7 @@ from pyroaring import BitMap
 from grqe.corpus.disk import IntArray, IntBytesMap
 from grqe.corpus.corpus import Corpus, IndexDir
 from grqe.corpus.index import Index
-from grqe.types import BinarySignature, IndexSignature, UnarySignature
+from grqe.type_definitions import BinarySignature, IndexSignature, UnarySignature
 
 
 def collect_for_unary(corpus: Corpus, signature: UnarySignature) -> Generator[tuple[int, int]]:
@@ -16,27 +16,26 @@ def collect_for_unary(corpus: Corpus, signature: UnarySignature) -> Generator[tu
 
 def collect_for_binary(corpus: Corpus, signature: BinarySignature,
                        min_frequency: int = None) -> Generator[tuple[int, int]]:
-    feature1, distance, feature2 = signature
+    features1 = corpus.tokens()[signature.feature1].values
+    features2 = corpus.tokens()[signature.feature2].values
 
-    features1 = corpus.tokens()[feature1].values
-    features2 = corpus.tokens()[feature2].values
-
-    size = len(corpus) - distance
+    size = len(corpus) - signature.distance
     bitshift = features2.itemsize * 8
-    if not min_frequency:
+    if min_frequency is None:
         for pos in range(size):
             val1 = features1[pos]
-            val2 = features2[pos + distance]
+            val2 = features2[pos + signature.distance]
             yield pos, (val1 << bitshift) + val2
 
-    unary1 = corpus.base.indexes.unary(feature1)
-    unary2 = corpus.base.indexes.unary(feature2)
+    else:
+        unary1 = corpus.base.indexes.unary(signature.feature1)
+        unary2 = corpus.base.indexes.unary(signature.feature2)
 
-    for pos in range(size):
-        val1 = features1[pos]
-        val2 = features2[pos + distance]
-        if len(unary1.search(val1)) >= min_frequency and len(unary2.search(val2)) >= min_frequency:
-            yield pos, (val1 << bitshift) + val2
+        for pos in range(size):
+            val1 = features1[pos]
+            val2 = features2[pos + signature.distance]
+            if len(unary1.search(val1)) >= min_frequency and len(unary2.search(val2)) >= min_frequency:
+                yield pos, (val1 << bitshift) + val2
 
 
 def build_index_via_bitmaps(
