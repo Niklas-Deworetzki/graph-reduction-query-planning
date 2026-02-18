@@ -19,8 +19,6 @@ class IndexSignature(ABC):
         else:
             return UnarySignature(s)
 
-    def __iter__(self):
-        return astuple(self)
 
 @dataclass(frozen=True)
 class UnarySignature(IndexSignature):

@@ -10,7 +10,7 @@ from grqe.corpus.index import BinaryIndex, UnaryIndex
 from grqe.debug import LOGGER, profile
 from grqe.fputil import fold
 from grqe.query import Lookup
-from grqe.types import Feature, Symbol
+from grqe.type_definitions import Feature, Symbol
 
 
 class LookupStrategy(Protocol):
