@@ -69,9 +69,14 @@ def build_index_via_bitmaps(
                 small_index[small_indexsize:small_indexsize + len(bitmap)] = bitmap.to_array()
                 small_indexsize += len(bitmap)
 
+    if small_indexsize == 0:
+        IntArray.getpath(small_index.path).unlink()
+        IntArray.getconfigpath(small_index.path).unlink()
+    else:
         small_index.truncate(small_indexsize)
 
-    IntBytesMap.build(path / Index.BIGSET_FILENAME, big_keys, big_values, size=size, max_value=max_value)
+    if len(big_keys) > 0:
+        IntBytesMap.build(path / Index.BIGSET_FILENAME, big_keys, big_values, size=size, max_value=max_value)
     return size
 
 
