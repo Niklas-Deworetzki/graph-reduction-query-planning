@@ -68,7 +68,7 @@ class IntArray(OnDisk, Array[int]):
         return self._array.__len__()
 
     def __getitem__(self, item):
-        return self.__getitem__(item)
+        return self._array.__getitem__(item)
 
     def slice(self, j: int, k: int) -> memoryview:
         return self._array[j:k]
