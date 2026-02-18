@@ -37,6 +37,7 @@ def collect_for_binary(corpus: Corpus, signature: BinarySignature,
             if len(unary1.search(val1)) >= min_frequency and len(unary2.search(val2)) >= min_frequency:
                 yield pos, (val1 << bitshift) + val2
 
+BITMAP_NATIVE_INTEGER_SIZE = BitMap().to_array().itemsize
 
 def build_index_via_bitmaps(
         path: Path,
@@ -66,8 +67,13 @@ def build_index_via_bitmaps(
                 big_keys.append(value)
                 big_values.append(serialized_bitmap)
             else:
-                small_index[small_indexsize:small_indexsize + len(bitmap)] = bitmap.to_array()
-                small_indexsize += len(bitmap)
+                if small_index.itemsize == BITMAP_NATIVE_INTEGER_SIZE:
+                    small_index[small_indexsize:small_indexsize + len(bitmap)] = bitmap.to_array()
+                    small_indexsize += len(bitmap)
+                else:
+                    for element in bitmap:
+                        small_index[small_indexsize] = element
+                        small_indexsize += 1
 
     if small_indexsize == 0:
         IntArray.getpath(small_index.path).unlink()
