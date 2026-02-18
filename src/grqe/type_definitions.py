@@ -13,7 +13,7 @@ class IndexSignature(ABC):
 
     @staticmethod
     def parse(s: str) -> IndexSignature:
-        if match := IndexSignature.BINARY_PATTERN.fullmatch(s):
+        if match := BinarySignature.SIGNATURE_PATTERN.fullmatch(s):
             feature1, distance_str, feature2 = match.groups()
             return BinarySignature(feature1, int(distance_str), feature2)
         else:
@@ -32,12 +32,15 @@ class UnarySignature(IndexSignature):
 
 @dataclass(frozen=True)
 class BinarySignature(IndexSignature):
+    SEPARATOR_CHAR: ClassVar[str] = '@'
+    SIGNATURE_PATTERN: ClassVar[re.Pattern] = re.compile(rf'(\w+){SEPARATOR_CHAR}(\d+){SEPARATOR_CHAR}(\w+)')
+
     feature1: Feature
     distance: int
     feature2: Feature
 
     def __str__(self):
-        return f'{self.feature1}@{self.distance}@{self.feature2}'
+        return BinarySignature.SEPARATOR_CHAR.join([self.feature1, str(self.distance), self.feature2])
 
 
 @dataclass(frozen=True, order=True, kw_only=True)
