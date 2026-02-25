@@ -1,13 +1,13 @@
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, reduce
 from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
 
 from grqe.sets import BucketRangeSet
 
 __all__ = [
-    'Cost', 'Value', 'Atom', 'Node',
+    'Cost', 'Value', 'Width', 'Atom', 'SpanAtom', 'Node',
 ]
 
 Cost = float
@@ -71,6 +71,12 @@ class Atom:
         return Atom(self.relative_position + offset, self.key, self.value)
 
 
+@dataclass(frozen=True, order=True)
+class SpanAtom:
+    key: str
+    value: str
+
+
 class Node(ABC):
     # Instance fields in this class will be provided for every node.
     # We mark them specially, so that they can be mutable and nodes are still hashable and
@@ -121,7 +127,7 @@ class Node(ABC):
             raise TypeError(f'{cls.__name__} must override {Node.possible_widths.__name__} or {Node.width.__name__}.')
 
     @abstractmethod
-    def possible_widths(self) -> set[int]:
+    def possible_widths(self) -> Width:
         """Returns all possible widths for results of this node."""
         raise NotImplementedError()
 
@@ -174,6 +180,7 @@ class Node(ABC):
 
     @cached_property
     def signature(self) -> tuple:
+        """Cached property used to order instances of Node."""
         tag = self.class_tag()
         child_tags = tuple(c.signature for c in self.children())
         return tag, len(child_tags), *child_tags
@@ -233,10 +240,27 @@ class Lookup(Node):
         return tag, len(immutable_atoms), *immutable_atoms
 
     @override
-    def possible_widths(self) -> set[int]:
+    def possible_widths(self) -> Width:
         max_offset = max(atom.relative_position for atom in self.atoms)
         min_offset = min(atom.relative_position for atom in self.atoms)
-        return {(max_offset - min_offset) + 1}
+        return Width.of((max_offset - min_offset) + 1)
+
+
+@node_type()
+class SpanLookup(Node):
+    span: str
+    atoms: Iterable[SpanAtom]
+
+    @cached_property
+    @override
+    def signature(self) -> tuple:
+        tag = self.class_tag()
+        immutable_atoms = tuple(self.atoms)
+        return tag, self.span, len(immutable_atoms), *immutable_atoms
+
+    @override
+    def possible_widths(self) -> Width:
+        return Width.unbounded()
 
 
 # @node_type('element')
@@ -249,9 +273,9 @@ class Conjunction(Node):
     elements: Iterable[Node]
 
     @override
-    def possible_widths(self) -> set[int]:
+    def possible_widths(self) -> Width:
         widths = (element.possible_widths() for element in self.elements)
-        return set.intersection(*widths)
+        return reduce(lambda a, b: a & b, widths)
 
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)
@@ -259,9 +283,9 @@ class Disjunction(Node):
     elements: Iterable[Node]
 
     @override
-    def possible_widths(self) -> set[int]:
+    def possible_widths(self) -> Width:
         widths = (element.possible_widths() for element in self.elements)
-        return set.union(*widths)
+        return reduce(lambda a, b: a | b, widths)
 
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)
@@ -269,9 +293,9 @@ class Alternative(Node):
     elements: Iterable[Node]
 
     @override
-    def possible_widths(self) -> set[int]:
+    def possible_widths(self) -> Width:
         widths = (element.possible_widths() for element in self.elements)
-        return set.union(*widths)
+        return reduce(lambda a, b: a | b, widths)
 
 
 @node_type('elements', var_arity=True, associative=True)
@@ -279,11 +303,9 @@ class Sequence(Node):
     elements: Seq[Node]
 
     @override
-    def possible_widths(self) -> set[int]:
-        widths = {0}
-        for element in self.elements:
-            widths = {x + y for x in widths for y in element.possible_widths()}
-        return widths
+    def possible_widths(self) -> Width:
+        widths = (element.possible_widths() for element in self.elements)
+        return reduce(lambda a, b: a + b, widths, initial=Width.of(0))
 
 
 @node_type('lhs', 'rhs')
@@ -291,7 +313,8 @@ class Subtraction(Node):
     lhs: Node
     rhs: Node
 
-    def possible_widths(self) -> set[int]:
+    @override
+    def possible_widths(self) -> Width:
         return self.lhs.possible_widths()
 
 
@@ -299,13 +322,35 @@ class Subtraction(Node):
 class Arbitrary(Node):
 
     @override
-    def possible_widths(self) -> set[int]:
-        return {1}
+    def possible_widths(self) -> Width:
+        return Width.of(1)
 
 
 @node_type()
 class Epsilon(Node):
 
     @override
-    def possible_widths(self) -> set[int]:
-        return {0}
+    def possible_widths(self) -> Width:
+        return Width.of(0)
+
+
+@node_type('element')
+class Repeat(Node):
+    element: Node
+
+    @override
+    def possible_widths(self) -> Width:
+        element_widths = self.element.possible_widths()
+        if element_widths.is_unbounded() and len(element_widths) == 0:
+            return element_widths
+        return Width.unbounded()
+
+
+@node_type('element', 'container')
+class Contained(Node):
+    element: Node
+    container: Node
+
+    @override
+    def possible_widths(self) -> Width:
+        return self.element.possible_widths()
