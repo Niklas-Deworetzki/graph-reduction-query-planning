@@ -118,7 +118,7 @@ class IndexesToBuild:
                 )
                 continue
 
-            defined_span_features = corpus.spans()[span].keys()
+            defined_span_features = corpus.spans()[span].annotations().keys()
             span_features = set(features)
             for unsupported_feature in sorted(span_features - defined_span_features):
                 self._report_config_error(
@@ -128,8 +128,8 @@ class IndexesToBuild:
             self.spans[span] = set(map(UnarySignature, span_features))
 
         if args.all_span:
-            for span, annotations in corpus.spans().items():
-                self.spans[span] = set(map(UnarySignature, annotations.keys()))
+            for span, data in corpus.spans().items():
+                self.spans[span] = set(map(UnarySignature, data.annotations().keys()))
 
     def _check_implied_indexes(self, args: argparse.Namespace, corpus: Corpus):
         unary_features = {signature.feature for signature in self.unary}

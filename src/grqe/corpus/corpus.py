@@ -41,13 +41,10 @@ class Corpus:
     def tokens(self) -> dict[str, AnnotationsDir]:
         return self.base.tokens.annotations()
 
-    def spans(self) -> dict[str, dict[str, AnnotationsDir]]:
-        return {
-            span: dir.annotations()
-            for span, dir in self.base.spans.spans().items()
-        }
+    def spans(self) -> dict[str, SpanDir]:
+        return self.base.spans.spans()
 
-    def span(self, name: str) -> dict[str, AnnotationsDir]:
+    def span(self, name: str) -> SpanDir:
         return self.spans()[name]
 
     def unary_indexes(self) -> dict[UnarySignature, UnaryIndex]:
