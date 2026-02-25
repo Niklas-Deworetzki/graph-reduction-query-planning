@@ -1,21 +1,23 @@
 from dataclasses import dataclass
+from functools import reduce
 from typing import Iterable, Optional, Protocol, Tuple
 
 import networkx as nx
 from pyroaring import BitMap
 
-from grqe.corpus.corpus import AnnotationsDir, Corpus
-from grqe.corpus.disk import IntArray
-from grqe.corpus.index import BinaryIndex, UnaryIndex
+from grqe.corpus import AnnotationsDir, Corpus, IntArray, BinaryIndex, SpanDir, UnaryIndex
 from grqe.debug import LOGGER, profile
-from grqe.fputil import fold
-from grqe.query import Lookup
+from grqe.query import Lookup, SpanLookup
+from grqe.sets import Range
 from grqe.type_definitions import Feature, Symbol
 
 
 class LookupStrategy(Protocol):
 
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
+        ...
+
+    def lookup_span(self, lookup: SpanLookup) -> Iterable[Range]:
         ...
 
     @staticmethod
@@ -28,6 +30,12 @@ class Attribute:
     """feature @ offset = value"""
     feature: Feature
     offset: int
+    value: Symbol
+
+
+@dataclass(frozen=True)
+class SpanAttribute:
+    resolved_feature: AnnotationsDir
     value: Symbol
 
 
@@ -44,6 +52,7 @@ def linear_search(data: IntArray, symbol: Symbol) -> BitMap:
 
 
 class GraphBasedIndexLookup:
+    corpus: Corpus
     unary_indexes: dict[str, UnaryIndex]
     binary_indexes: dict[tuple[str, int, str], BinaryIndex] = dict()
     features: dict[str, AnnotationsDir]
@@ -62,6 +71,42 @@ class GraphBasedIndexLookup:
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
             LOGGER.warning(f'No index for feature {unresolved_feature}. Searching will be slow.')
+
+    @staticmethod
+    def _prepare_span_attributes(lookup: SpanLookup, span: SpanDir) -> Optional[list[SpanAttribute]]:
+        attributes = []
+        for atom in lookup.atoms:
+            annotations = span.annotations().get(atom.key)
+            if not annotations:  # Unknown attribute
+                return None
+
+            symbol = annotations.to_symbol(atom.value.encode())
+            if symbol == -1:
+                return None  # Unknown value for attribute.
+            attributes.append(SpanAttribute(annotations, symbol))
+        return attributes
+
+    def lookup_span(self, lookup: SpanLookup) -> Iterable[Range]:
+        if not (span := self.corpus.spans().get(lookup.span)):
+            return []
+
+        attributes = self._prepare_span_attributes(lookup, span)
+        if attributes is None:
+            return []
+        elif len(attributes) == 0:
+            return span.ranges
+
+        with profile('span fetching'):
+            matching_span_ids = []
+            for attribute in attributes:
+                if attribute.resolved_feature.index is not None:
+                    span_ids = attribute.resolved_feature.index.search(attribute.value)
+                else:
+                    span_ids = linear_search(attribute.resolved_feature.values, attribute.value)
+                matching_span_ids.append(span_ids)
+
+            span_ids = conjunct_bitmaps(matching_span_ids)
+            return (span.ranges[i] for i in span_ids)
 
     def _prefetch(self, attributes: Iterable[Attribute]) -> dict[Edge, BitMap]:
         prefetched = dict()
@@ -132,5 +177,9 @@ class GraphBasedIndexLookup:
 
                 index_lookups.append(prefetched[a_l, a_r])
 
-            index_lookups.sort(key=len)  # Start with smallest to reduce execution time.
-            return fold(index_lookups, lambda a, b: a & b)
+            return conjunct_bitmaps(index_lookups)
+
+
+def conjunct_bitmaps(conjuncts: list[BitMap]) -> BitMap:
+    conjuncts.sort(key=len)  # Start with smallest to reduce execution time.
+    return reduce(lambda a, b: a & b, conjuncts)
