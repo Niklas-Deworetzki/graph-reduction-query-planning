@@ -8,6 +8,7 @@ type Range = Tuple[int, int]
 
 type RangeSet = collections.abc.Set[Range]
 
+
 class BucketRangeSet(collections.abc.Set[Range]):
     buckets: Dict[int, BitMap]
 
@@ -53,6 +54,21 @@ class BucketRangeSet(collections.abc.Set[Range]):
         }
         for key in (self.buckets.keys() - common_keys):
             buckets[key] = self.buckets[key]
+        return BucketRangeSet(buckets)
+
+    def covered_by(self, container: 'BucketRangeSet') -> 'BucketRangeSet':
+        buckets = {}
+        for self_size, self_startpoints in self.buckets.items():
+            mask = BitMap()
+
+            for container_size, container_startpoints in container.buckets.items():
+                for container_startpoint in container_startpoints:
+                    endpoint = container_startpoint + container_size - self_size
+                    mask.add_range(container_startpoint, endpoint)
+
+            bucket = mask & self_startpoints
+            if len(bucket) > 0:
+                buckets[self_size] = bucket
         return BucketRangeSet(buckets)
 
     def join(self, other: 'BucketRangeSet', distance: int = 0) -> 'BucketRangeSet':
