@@ -14,8 +14,10 @@ GRAMMAR = """
               | OPERATOR expression+    -> application
               | IDENTIFIER              -> variable
               | "[" atom* "]"           -> lookup
+              | "<" KEY span_atom* ">"  -> span_lookup
     
     atom: KEY "@" OFFSET "=" STRING 
+    span_atom: KEY "=" STRING
 
     KEY:        LETTER (LETTER | DIGIT)*
     OPERATOR:   LOWER (LOWER | DIGIT)*
@@ -66,6 +68,8 @@ class Transform:
         'seq': Sequence,
         'alt': Alternative,
         'sub': Subtraction,
+        'contained': Contained,
+        'rep': Repeat,
     }
 
     environment: dict[str, Node]
@@ -115,16 +119,25 @@ class Transform:
                 return value
 
             case 'lookup':
-                atoms = tuple(self.atom(t) for t in t.children)
+                atoms = tuple(map(self.atom, t.children))
                 if len(atoms) == 0:
                     return Arbitrary()
                 return Lookup(atoms)
+
+            case 'span_lookup':
+                span, *unparsed_atoms = t.children
+                atoms = tuple(map(self.span_atom, unparsed_atoms))
+                return SpanLookup(span, atoms)
 
         raise NotImplementedError()
 
     def atom(self, t) -> Atom:
         key, offset, value = t.children
         return Atom(int(offset), key, value[1:-1])
+
+    def span_atom(self, t) -> SpanAtom:
+        key, value = t.children
+        return SpanAtom(key, value[1:-1])
 
 
 def parse(s: str) -> Node:
