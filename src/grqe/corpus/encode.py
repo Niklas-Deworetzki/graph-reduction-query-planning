@@ -1,4 +1,5 @@
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -29,42 +30,50 @@ class AnnotationCollector:
         for key, collector in self.span_data[span].items():
             collector.add(attributes[key])
 
+class CachedAnnotationsWriter:
+    base: AnnotationsDir
+
+    def __init__(self, base: AnnotationsDir):
+        self.base = base
+        self.cached_lookup = lru_cache(maxsize=1024 * 8)(self.base.to_symbol)
+
+
+    def write_value(self, offset: int, value: bytes):
+        encoded_value = self.cached_lookup(value)
+        self.base.values[offset] = encoded_value
+
 
 class AnnotationEncoder:
-    column_data: dict[str, AnnotationsDir]
-    span_data: dict[str, dict[str, AnnotationsDir]]
+    column_data: dict[str, CachedAnnotationsWriter]
+    span_data: dict[str, dict[str, CachedAnnotationsWriter]]
     span_count: dict[str, int]
 
     def __init__(self, corpus: CorpusDir, columns: list[str], spans: dict[str, set[str]]):
-        self.column_data = {column: corpus.tokens.annotation(column) for column in columns}
+        self.column_data = {column: CachedAnnotationsWriter(corpus.tokens.annotation(column)) for column in columns}
 
         self.span_data = {}
         self.span_count = {}
         for span, keys in spans.items():
             span_dir = corpus.spans.span(span)
-            self.span_data[span] = {key: span_dir.annotation(key) for key in keys}
+            self.span_data[span] = {key: CachedAnnotationsWriter(span_dir.annotation(key)) for key in keys}
             self.span_count[span] = 0
 
         for annotation_dir in self.column_data.values():
-            annotation_dir.prepare_write_values()
+            annotation_dir.base.prepare_write_values()
 
         for annotations in self.span_data.values():
             for annotation_dir in annotations.values():
-                annotation_dir.prepare_write_values()
-
-    def write_value(self, offset: int, dir: AnnotationsDir, value: bytes):
-        encoded_value = dir.symbols.to_symbol(value)
-        dir.values[offset] = encoded_value
+                annotation_dir.base.prepare_write_values()
 
     def on_token(self, position: int, attributes: dict[str, bytes]):
         for key, annotations_dir in self.column_data.items():
-            self.write_value(position, annotations_dir, attributes[key])
+            annotations_dir.write_value(position, attributes[key])
 
     def on_span(self, span: str, begin: int, end: int, attributes: dict[str, bytes]):
         count = self.span_count[span]
 
         for key, annotations_dir in self.span_data[span].items():
-            self.write_value(count, annotations_dir, attributes[key])
+            annotations_dir.write_value(count, attributes[key])
 
         self.span_count[span] = count + 1
 
@@ -98,10 +107,12 @@ def encode_corpus(
             span_dir.annotation(span_annotation).write_symbols(
                 collector.span_data[span][span_annotation]
             )
+    del collector
 
     print('Encoding data...', file=sys.stderr)
     encoder = AnnotationEncoder(corpus, columns, spans)
     parser.process(CorpusHandler(encoder.on_token, encoder.on_span))
+    del encoder
 
 
 def span_is_tiling(ranges: list[tuple[int, int]], token_count: int) -> bool:
