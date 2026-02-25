@@ -16,6 +16,52 @@ Value = BucketRangeSet
 
 
 @dataclass(frozen=True, order=True)
+class Width:
+    """Datatype for static width computation."""
+    widths: Optional[set[int]]
+
+    @staticmethod
+    def of(value: int) -> Width:
+        return Width({value})
+
+    @staticmethod
+    def unbounded() -> Width:
+        return Width(None)
+
+    def is_unbounded(self) -> bool:
+        return self.widths is None
+
+    def has_fixed_width(self) -> bool:
+        return not self.is_unbounded() and len(self.widths) == 1
+
+    def __add__(self, other: Width) -> Width:
+        if self.is_unbounded() or other.is_unbounded(): return Width.unbounded()
+        return Width({
+            x + y
+            for x in self.widths
+            for y in other.widths
+        })
+
+    def __and__(self, other: Width) -> Width:
+        if self.is_unbounded() and other.is_unbounded(): return Width.unbounded()
+        if self.is_unbounded(): return other
+        if other.is_unbounded(): return self
+        return Width(self.widths & other.widths)
+
+    def __or__(self, other: Width) -> Width:
+        if self.is_unbounded() or other.is_unbounded(): return Width.unbounded()
+        return Width(self.widths | other.widths)
+
+    def __len__(self):
+        assert not self.is_unbounded(), 'Cannot iterate over unbounded set of widths.'
+        return len(self.widths)
+
+    def __iter__(self):
+        assert not self.is_unbounded(), 'Cannot iterate over unbounded set of widths.'
+        yield from self.widths
+
+
+@dataclass(frozen=True, order=True)
 class Atom:
     relative_position: int
     key: str
