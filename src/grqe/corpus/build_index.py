@@ -4,14 +4,14 @@ from typing import Generator, Iterator
 
 from pyroaring import BitMap
 
+from grqe.corpus.corpus import AnnotationsDir, Corpus, IndexDir
 from grqe.corpus.disk import IntArray, IntBytesMap
-from grqe.corpus.corpus import Corpus, IndexDir
 from grqe.corpus.index import Index
-from grqe.type_definitions import BinarySignature, IndexSignature, UnarySignature
+from grqe.type_definitions import BinarySignature
 
 
-def collect_for_unary(corpus: Corpus, signature: UnarySignature) -> Generator[tuple[int, int]]:
-    yield from enumerate(corpus.tokens()[signature.feature].values)
+def collect_from_annotations(annotations: AnnotationsDir) -> Generator[tuple[int, int]]:
+    yield from enumerate(annotations.values)
 
 
 def collect_for_binary(corpus: Corpus, signature: BinarySignature,
@@ -37,7 +37,9 @@ def collect_for_binary(corpus: Corpus, signature: BinarySignature,
             if len(unary1.search(val1)) >= min_frequency and len(unary2.search(val2)) >= min_frequency:
                 yield pos, (val1 << bitshift) + val2
 
+
 BITMAP_NATIVE_INTEGER_SIZE = BitMap().to_array().itemsize
+
 
 def build_index_via_bitmaps(
         path: Path,
@@ -86,12 +88,15 @@ def build_index_via_bitmaps(
     return size
 
 
-def build_index(corpus: Corpus, signature: IndexSignature, min_frequency: int = None):
+def build_binary_index(corpus: Corpus, signature: BinarySignature, min_frequency: int = None):
     index_dir = corpus.base.indexes.path / IndexDir.filename(signature)
-    match signature:
-        case UnarySignature():
-            collect = collect_for_unary(corpus, signature)
-        case BinarySignature():
-            collect = collect_for_binary(corpus, signature, min_frequency)
     index_dir.mkdir(parents=True, exist_ok=True)
+    collect = collect_for_binary(corpus, signature, min_frequency)
+    build_index_via_bitmaps(index_dir, collect)
+
+
+def build_unary_index(annotations: AnnotationsDir):
+    index_dir = annotations.index_path
+    index_dir.mkdir(parents=True, exist_ok=True)
+    collect = collect_from_annotations(annotations)
     build_index_via_bitmaps(index_dir, collect)

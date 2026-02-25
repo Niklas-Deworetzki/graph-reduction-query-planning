@@ -1,7 +1,7 @@
 import json
 import os
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, Iterable, Optional, Self, override
@@ -47,8 +47,15 @@ class Corpus:
             for span, dir in self.base.spans.spans().items()
         }
 
+    def span(self, name: str) -> dict[str, AnnotationsDir]:
+        return self.spans()[name]
+
     def unary_indexes(self) -> dict[UnarySignature, UnaryIndex]:
-        return self.base.indexes.unary_indexes
+        return {
+            UnarySignature(feature): annotation.index
+            for feature, annotation in self.base.tokens.annotations().items()
+            if annotation.index
+        }
 
     def unary_index(self, feature: str) -> Optional[UnaryIndex]:
         signature = UnarySignature(feature)
@@ -139,9 +146,11 @@ class AnnotationsDir(DirNode):
     Both are available after calling load."""
     symbols_path: Path
     values_path: Path
+    index_path: Path
 
     symbols: SymbolCollection
     values: IntArray
+    index: Optional[UnaryIndex]
 
     count: int
 
@@ -149,16 +158,20 @@ class AnnotationsDir(DirNode):
         super().__init__(path)
         self.symbols_path = self.path / 'symbols'
         self.values_path = self.path / 'values'
+        self.index_path = self.path / 'index'
 
         self.count = count
         self.symbols = None
         self.values = None
+        self.index = None
 
     @override
     def acquire(self):
         """Load the symbols and values for this annotation."""
         self.symbols = SymbolCollection(self.symbols_path)
         self.values = IntArray(self.values_path)
+        with suppress(FileNotFoundError):
+            self.index = UnaryIndex(self.index_path, self.values)
 
     @override
     def release(self):
@@ -167,6 +180,10 @@ class AnnotationsDir(DirNode):
         self.values.close()
         self.symbols = None
         self.values = None
+
+        if self.index:
+            self.index.close()
+            self.index = None
 
     def to_symbol(self, value: bytes) -> Symbol:
         return self.symbols.to_symbol(value)
@@ -320,7 +337,6 @@ class SpansDir(DirNode):
 
 class IndexDir(DirNode):
     corpus: Corpus
-    unary_indexes: dict[UnarySignature, UnaryIndex]
     binary_indexes: dict[BinarySignature, BinaryIndex]
 
     def __init__(self, corpus: Corpus, path: Path):
@@ -340,19 +356,17 @@ class IndexDir(DirNode):
                 continue
             else:
                 signature = IndexSignature.parse(p.name)
-                match signature:
-                    case UnarySignature():
-                        feature = self.corpus.tokens()[signature.feature].values
-                        self.unary_indexes[signature] = UnaryIndex(p, feature)
-                    case BinarySignature():
-                        feature1 = self.corpus.tokens()[signature.feature1].values
-                        feature2 = self.corpus.tokens()[signature.feature2].values
-                        self.binary_indexes[signature] = BinaryIndex(p, feature1, signature.distance, feature2)
+                if isinstance(signature, BinarySignature):
+                    feature1 = self.corpus.tokens()[signature.feature1].values
+                    feature2 = self.corpus.tokens()[signature.feature2].values
+                    self.binary_indexes[signature] = BinaryIndex(p, feature1, signature.distance, feature2)
 
     @override
     def release(self):
-        for index in self.unary_indexes.values(): index.close()
         for index in self.binary_indexes.values(): index.close()
+
+    def unary(self, feature: str) -> UnaryIndex:
+        return self.corpus.base.tokens.annotation(feature).index
 
     def _lookup[S: IndexSignature, I: Index](self, signature: S, ctor: type[I], cache: dict[S, I]) -> I:
         if signature not in cache:
@@ -360,10 +374,6 @@ class IndexDir(DirNode):
             path.mkdir(parents=True, exist_ok=True)
             cache[signature] = ctor(self.corpus, path, signature)
         return cache[signature]
-
-    def unary(self, feature: str) -> UnaryIndex:
-        signature = UnarySignature(feature)
-        return self._lookup(signature, UnaryIndex, self.unary_indexes)
 
     def binary(self, feature1: str, distance: int, feature2: str) -> BinaryIndex:
         signature = BinarySignature(feature1, distance, feature2)

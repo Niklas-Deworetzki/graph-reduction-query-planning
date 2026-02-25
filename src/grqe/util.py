@@ -1,7 +1,8 @@
 import math
 import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterable, Literal
+from typing import Callable, Generator, Iterable, Literal
 
 from typing import TYPE_CHECKING
 
@@ -132,7 +133,20 @@ try:
     def progress[T](it: Iterable[T], description: str, **kwargs) -> Iterable[T]:
         return tqdm.tqdm(it, desc=description, **kwargs)
 
+
+    @contextmanager
+    def progress_bar(maximum: int, description: str, **kwargs) -> Generator[Callable[[], None]]:
+        pbar = tqdm.tqdm(total=maximum, desc=description, **kwargs)
+        yield lambda: pbar.update()
+        pbar.close()
+
+
 except ImportError:
 
     def progress[T](it: Iterable[T], description: str, **kwargs) -> Iterable[T]:
         return it
+
+
+    @contextmanager
+    def progress_bar(maximum: int, description: str, **kwargs) -> Generator[Callable[[], None]]:
+        yield lambda: None

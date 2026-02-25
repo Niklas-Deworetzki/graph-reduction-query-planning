@@ -1,14 +1,15 @@
 import argparse
 import sys
+from dataclasses import dataclass, field
 from itertools import product
 from pathlib import Path
 from typing import Callable, Optional
 
-from grqe.corpus.build_index import build_index
+from grqe.corpus.build_index import build_binary_index, build_unary_index
 from grqe.corpus.corpus import Corpus
 from grqe.corpus.encode import encode_corpus
 from grqe.type_definitions import BinarySignature, UnarySignature
-from grqe.util import progress
+from grqe.util import progress_bar
 
 DEFAULT_BINARY_DISTANCE = 2
 DEFAULT_BINARY_FREQUENCY = .05
@@ -42,97 +43,153 @@ def run_encode(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> 
     return True
 
 
+@dataclass
+class IndexesToBuild:
+    configuration_is_invalid: bool = False
+    unary: set[UnarySignature] = field(default_factory=set)
+    binary: set[BinarySignature] = field(default_factory=set)
+    spans: dict[str, set[UnarySignature]] = field(default_factory=dict)
+    min_frequency: Optional[int] = None
+
+    def __len__(self):
+        return len(self.unary) + len(self.binary) + sum(len(values) for values in self.spans.values())
+
+    def _report_config_error(self, msg: str):
+        warn(msg)
+        self.configuration_is_invalid = True
+
+    def _collect_unary_indexes(self, args: argparse.Namespace, corpus: Corpus):
+        unary_indexes = set(args.unary)
+        for unsupported_feature in sorted(unary_indexes - corpus.features()):
+            self._report_config_error(
+                f'Cannot build unary index "{unsupported_feature}": {unsupported_feature} is not a known feature.'
+            )
+
+        self.unary.update(map(UnarySignature, unary_indexes))
+        if args.all_unary:
+            self.unary.update(map(UnarySignature, corpus.features()))
+
+    def _collect_binary_indexes(self, args: argparse.Namespace, corpus: Corpus):
+        for (feature1, distance, feature2) in args.binary:
+            if not distance.isnumeric():
+                self._report_config_error(
+                    f'Cannot build binary index "{feature1} {distance} {feature2}": '
+                    f'{distance} is not a valid integer.'
+                )
+                continue
+
+            for feature in (feature1, feature2):
+                if feature not in corpus.features():
+                    self._report_config_error(
+                        f'Cannot build binary index "{feature1} {distance} {feature2}": '
+                        f'{feature} is not a known feature.'
+                    )
+                    continue
+
+            self.binary.add(BinarySignature(feature1, int(distance), feature2))
+
+        if args.all_binary is not None:
+            if len(args.all_binary) == 0:
+                distance = DEFAULT_BINARY_DISTANCE
+                features = []
+
+            else:
+                distance, *features = args.all_binary
+
+                if not distance.isnumeric():
+                    self._report_config_error(f'Cannot build binary indexes: {distance} is not a valid integer.')
+                    return
+                distance = max(0, int(distance))
+
+            if len(features) == 0:
+                features = corpus.features()
+            else:
+                features = list(features)
+
+            distances = range(distance + 1)
+            for feature1, distance, feature2 in product(features, distances, features):
+                self.binary.add(BinarySignature(feature1, distance, feature2))
+
+    def _collect_span_indexes(self, args: argparse.Namespace, corpus: Corpus):
+        for span, *features in args.span:
+            if span not in corpus.spans():
+                self._report_config_error(
+                    f'Cannot build span indexes for {span}: {span} is not known.'
+                )
+                continue
+
+            defined_span_features = corpus.spans()[span].keys()
+            span_features = set(features)
+            for unsupported_feature in sorted(span_features - defined_span_features):
+                self._report_config_error(
+                    f'Cannot build span index for {span}: {unsupported_feature} is not a known feature.'
+                )
+
+            self.spans[span] = set(map(UnarySignature, span_features))
+
+        if args.all_span:
+            for span, annotations in corpus.spans().items():
+                self.spans[span] = set(map(UnarySignature, annotations.keys()))
+
+    def _check_implied_indexes(self, args: argparse.Namespace, corpus: Corpus):
+        unary_features = {signature.feature for signature in self.unary}
+        unary_features |= {signature.feature for signature in corpus.unary_indexes().keys()}
+        binary_features = {feature for signature in self.binary for feature in (signature.feature1, signature.feature2)}
+
+        missing_features = binary_features - unary_features
+        if missing_features and not args.add_implied:
+            self._report_config_error(
+                'The following unary indexes are required but not requested: ' +
+                ' '.join(sorted(missing_features))
+            )
+        else:
+            self.unary.update(map(UnarySignature, missing_features))
+
+    def _collect_min_frequency(self, args: argparse.Namespace, corpus: Corpus):
+        if args.frequency is not None:
+            if args.frequency.is_integer():
+                self.min_frequency = args.frequency
+            elif 0 < args.frequency < 1:
+                self.min_frequency = args.frequency * len(corpus)
+            else:
+                self._report_config_error(
+                    f'Invalid minimum frequency. {args.frequency} must be a decimal between 0 and 1, or an integer.'
+                )
+
+    @staticmethod
+    def from_args(corpus: Corpus, args: argparse.Namespace) -> IndexesToBuild:
+        configuration = IndexesToBuild()
+        configuration._collect_unary_indexes(args, corpus)
+        configuration._collect_binary_indexes(args, corpus)
+        configuration._collect_span_indexes(args, corpus)
+        configuration._check_implied_indexes(args, corpus)
+        configuration._collect_min_frequency(args, corpus)
+        return configuration
+
+
 def run_index(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> bool:
     if not corpus_dir.exists() or not corpus_dir.is_dir():
         warn(f'Corpus dir does not exist. Encode corpus first: {corpus_dir}')
         return False
 
-    configuration_is_invalid: bool = False
-
-    def collect_unary_indexes(known_features: set[str]) -> list[UnarySignature]:
-        nonlocal configuration_is_invalid
-        unary: list[UnarySignature] = []
-        for feature in args.unary:
-            if feature not in known_features:
-                warn(f'Cannot build unary index "{feature}": {feature} is not a known feature.')
-                configuration_is_invalid = True
-                continue
-
-            unary.append(UnarySignature(feature))
-
-        if args.all_unary:
-            unary.extend(map(UnarySignature, known_features))
-        return unary
-
-    def collect_binary_indexes(known_features: set[str]) -> list[BinarySignature]:
-        nonlocal configuration_is_invalid
-        binary: list[BinarySignature] = []
-        for (feature1, distance, feature2) in args.binary:
-            if not distance.isnumeric():
-                warn(f'Cannot build binary index "{feature1} {distance} {feature2}": '
-                     f'{distance} is not a valid integer.')
-                configuration_is_invalid = True
-                continue
-
-            for feature in (feature1, feature2):
-                if feature not in known_features:
-                    warn(f'Cannot build binary index "{feature1} {distance} {feature2}": '
-                         f'{feature} is not a known feature.')
-                    configuration_is_invalid = True
-                    continue
-
-            binary.append(BinarySignature(feature1, int(distance), feature2))
-
-        if args.all_binary is not None:
-            distances = range(args.all_binary + 1)
-            for feature1, distance, feature2 in product(features, distances, features):
-                binary.append(BinarySignature(feature1, distance, feature2))
-
-        return binary
-
-    def check_implied_indexes(binary: list[BinarySignature], unary: list[UnarySignature]):
-        nonlocal configuration_is_invalid
-        unary_features = {signature.feature for signature in unary}
-        unary_features |= {signature.feature for signature in corpus.unary_indexes().keys()}
-        binary_features = {feature for signature in binary for feature in (signature.feature1, signature.feature2)}
-
-        missing_features = binary_features - unary_features
-        if missing_features and not args.add_implied:
-            warn('The following unary indexes are required but not requested: ' +
-                 ' '.join(sorted(missing_features)))
-            configuration_is_invalid = True
-        else:
-            for missing_feature in missing_features:
-                unary.append(UnarySignature(missing_feature))
-
-    def get_min_frequency(corpus_size: int) -> Optional[int]:
-        nonlocal configuration_is_invalid
-        min_frequency = None
-        if args.frequency is not None:
-            if args.frequency.is_integer():
-                min_frequency = args.frequency
-            elif 0 < args.frequency < 1:
-                min_frequency = args.frequency * corpus_size
-            else:
-                warn(f'Invalid minimum frequency. {args.frequency} must be a decimal between 0 and 1, or an integer.')
-                configuration_is_invalid = True
-
-        return min_frequency
-
     with Corpus(corpus_name, corpus_dir).lock() as corpus:
-        features = corpus.features()
-
-        unary_signatures = collect_unary_indexes(features)
-        binary_signatures = collect_binary_indexes(features)
-        check_implied_indexes(binary_signatures, unary_signatures)
-        min_frequency = get_min_frequency(len(corpus))
-
-        if configuration_is_invalid:
+        indexes_to_build = IndexesToBuild.from_args(corpus, args)
+        if indexes_to_build.configuration_is_invalid:
             return False
 
-        all_signatures = unary_signatures + binary_signatures
-        for signature in progress(all_signatures, 'Building indexes'):
-            build_index(corpus, signature, min_frequency)
+        with progress_bar(len(indexes_to_build), 'Building indexes') as pbar:
+            for unary_index in indexes_to_build.unary:
+                build_unary_index(corpus.tokens()[unary_index.feature])
+                pbar()
+
+            for span, span_indexes in indexes_to_build.spans.items():
+                for span_index in span_indexes:
+                    build_unary_index(corpus.spans()[span][span_index.feature])
+                    pbar()
+
+            for binary_index in indexes_to_build.binary:
+                build_binary_index(corpus, binary_index, indexes_to_build.min_frequency)
+                pbar()
         return True
 
 
@@ -219,7 +276,7 @@ def make_parser() -> argparse.ArgumentParser:
     indexer.add_argument(
         '--all-unary', '-U',
         action='store_true',
-        help='Build unary indexes for all features.'
+        help='Build unary indexes for all token features.'
     )
     indexer.add_argument(
         '--unary', '-u',
@@ -228,15 +285,29 @@ def make_parser() -> argparse.ArgumentParser:
         default=[],
         metavar='ATTRIBUTE',
         action='append',
-        help='Build unary indexes for the given features.',
+        help='Build unary indexes for the given token features.',
+    )
+    indexer.add_argument(
+        '--all-span', '-S',
+        action='store_true',
+        help='Build indexes for all span features.'
+    )
+    indexer.add_argument(
+        '--span', '-s',
+        nargs='*',
+        action='append',
+        metavar=('SPAN', 'FEATURES'),
+        default=[],
+        type=str,
+        help='Build indexes for the given span features.'
     )
     indexer.add_argument(
         '--all-binary', '-B',
-        type=int,
-        nargs='?',
-        metavar='DISTANCE',
-        const=DEFAULT_BINARY_DISTANCE,
-        help='Build binary indexes for all features up to DISTANCE apart. '
+        type=str,
+        nargs='*',
+        metavar=('DISTANCE', 'FEATURES'),
+        help='Build binary indexes for all token features up to DISTANCE apart. '
+             'Optionally, a set of features to encode up to DISTANCE apart can be given. '
              f'If no distance is specified, {DEFAULT_BINARY_DISTANCE} will be used.'
     )
     indexer.add_argument(
