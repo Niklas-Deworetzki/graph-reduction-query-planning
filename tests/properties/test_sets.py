@@ -24,7 +24,8 @@ def test_set_operation(set_a, set_b, set_expected, operation):
     rset_a = BucketRangeSet.of(set_a)
     rset_b = BucketRangeSet.of(set_b)
 
-    assert set_expected == set(operation(rset_a, rset_b)), 'Operation does not produce correct result.'
+    set_actual = set(operation(rset_a, rset_b))
+    assert set_expected == set_actual, 'Operation does not produce correct result.'
     assert set(rset_a) == set_a, 'Operation modified left operand.'
     assert set(rset_b) == set_b, 'Operation modified right operand.'
 
@@ -53,6 +54,17 @@ def test_join(a, b, distance):
         if rl - lr == distance
     }
     test_set_operation(a, b, expected, lambda a, b: a.join(b, distance))
+
+
+@given(set_of_ranges(), set_of_ranges())
+def test_covers(a, b):
+    expected = {
+        (ll, lr)
+        for (ll, lr) in a
+        for (rl, rr) in b
+        if rl <= ll and rr >= lr
+    }
+    test_set_operation(a, b, expected, BucketRangeSet.covered_by)
 
 
 @given(set_of_ranges(), set_of_ranges(),
@@ -112,6 +124,7 @@ TEST_OPERATOR_SEMANTICS = [
     test_disjunction,
     test_difference,
     test_join,
+    test_covers,
 ]
 
 

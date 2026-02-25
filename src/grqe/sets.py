@@ -63,8 +63,9 @@ class BucketRangeSet(collections.abc.Set[Range]):
 
             for container_size, container_startpoints in container.buckets.items():
                 for container_startpoint in container_startpoints:
-                    endpoint = container_startpoint + container_size - self_size
-                    mask.add_range(container_startpoint, endpoint)
+                    endpoint = container_startpoint + container_size + 1 - self_size
+                    if endpoint > container_startpoint:
+                        mask.add_range(container_startpoint, endpoint)
 
             bucket = mask & self_startpoints
             if len(bucket) > 0:
