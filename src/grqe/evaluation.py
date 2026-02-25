@@ -1,8 +1,11 @@
+from collections import defaultdict
 from typing import Protocol
+
+from pyroaring import BitMap
 
 from grqe.debug import LOGGER, current_time
 from grqe.fetch import LookupStrategy
-from grqe.korp import Corpus
+from grqe.corpus import Corpus
 from grqe.query import *
 
 
@@ -45,6 +48,26 @@ class FullEvaluator:
 
                 node.value = res
 
+            case Repeat():
+                self.eval_node(node.element)
+
+                start_time = current_time()
+
+                accum = node.element.value.copy()
+                step = accum.copy()
+                while len(step) > 0:
+                    step = step.join(node.element.value.copy())
+                    accum = accum | step
+                node.value = accum
+
+            case Contained():
+                self.eval_node(node.element)
+                self.eval_node(node.container)
+
+                start_time = current_time()
+
+                node.value = node.element.value.copy().covered_by(node.container.value.copy())
+
             case Subtraction():
                 self.eval_node(node.lhs)
                 self.eval_node(node.rhs)
@@ -60,6 +83,14 @@ class FullEvaluator:
                 max_off = max(atom.relative_position for atom in node.atoms)
                 lookup_positions = self.lookup_strategy.perform_lookup(node, offset=min_off)
                 node.value = BucketRangeSet({max_off - min_off: lookup_positions})
+
+            case SpanLookup():
+                start_time = current_time()
+
+                res = defaultdict(BitMap)
+                for start, end in self.lookup_strategy.lookup_span(node):
+                    res[end - start].add(start)
+                node.value = BucketRangeSet(res)
 
             case _:
                 raise NotImplementedError()
