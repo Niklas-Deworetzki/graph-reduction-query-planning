@@ -79,39 +79,23 @@ def distribute(node: Node, index: int) -> Node:
 # Sort children to canonical form (relies on Comm)
 
 def canonical(root: Node) -> Node:
-    return order_children(flatten_associative(remove_neutral_elements(root)))
+    return unpack_operators(order_children(flatten_associative(root)))
 
 
 def order_children(root: Node) -> Node:
     if isinstance(root, Lookup):
         return Lookup(tuple(sorted(root.atoms)))
+    if isinstance(root, SpanLookup):
+        return SpanLookup(root.span, tuple(sorted(root.atoms)))
 
     if root.arity == 0:
         return root
 
     children = (canonical(c) for c in root.children())
-    if root.is_idempotent and (root.is_commutative and root.is_associative) :
+    if root.is_idempotent and (root.is_commutative and root.is_associative):
         # Sort AND deduplicate children.
         children = sorted(set(children))
     return root.construct(children)
-
-
-def remove_neutral_elements(root: Node) -> Node:
-    if root.arity == 0:
-        return root
-
-    if isinstance(root, Sequence):
-        elements = tuple(remove_neutral_elements(c) for c in root.elements if not isinstance(c, Epsilon))
-        match len(elements):
-            case 0:
-                return Epsilon()
-            case 1:
-                return elements[0]
-            case _:
-                return Sequence(elements)
-    else:
-        children = (remove_neutral_elements(c) for c in root.children())
-        return root.construct(children)
 
 
 def flatten_associative(root: Node) -> Node:
@@ -134,6 +118,17 @@ def flatten_associative(root: Node) -> Node:
 
     rec = (flatten_associative(c) for c in children)
     return root_type.construct(rec)
+
+
+def unpack_operators(root: Node) -> Node:
+    if root.arity == 0:
+        return root
+
+    root_type = type(root)
+    children = [unpack_operators(child) for child in root.children()]
+    if root_type.arity is None and len(children) == 1:
+        return children[0]
+    return root_type.construct(children)
 
 
 def unfuse_leaves(root: Node) -> Node:
