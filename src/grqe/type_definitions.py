@@ -20,7 +20,7 @@ class IndexSignature(ABC):
             return UnarySignature(s)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class UnarySignature(IndexSignature):
     feature: Feature
 
@@ -28,14 +28,20 @@ class UnarySignature(IndexSignature):
         return self.feature
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False, order=True)
 class BinarySignature(IndexSignature):
     SEPARATOR_CHAR: ClassVar[str] = '@'
     SIGNATURE_PATTERN: ClassVar[re.Pattern] = re.compile(rf'(\w+){SEPARATOR_CHAR}(\d+){SEPARATOR_CHAR}(\w+)')
 
-    feature1: Feature
     distance: int
+    feature1: Feature
     feature2: Feature
+
+    def __init__(self, feature1: Feature, distance: int, feature2: Feature):
+        # We want this order in the constructor signature, but distance as the first in the derived order.
+        object.__setattr__(self, 'distance', distance)
+        object.__setattr__(self, 'feature1', feature1)
+        object.__setattr__(self, 'feature2', feature2)
 
     def __str__(self):
         return BinarySignature.SEPARATOR_CHAR.join([self.feature1, str(self.distance), self.feature2])
