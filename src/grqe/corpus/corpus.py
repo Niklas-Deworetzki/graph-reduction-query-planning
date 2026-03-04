@@ -24,7 +24,7 @@ class Corpus:
         self.base = CorpusDir(self, root)
 
     @contextmanager
-    def lock(self) -> Self:
+    def lock(self) -> Generator[Self]:
         # TODO: Actually implement some locking logic
         try:
             self.base.acquire()
