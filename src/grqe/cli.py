@@ -5,9 +5,7 @@ from itertools import product
 from pathlib import Path
 from typing import Callable, Optional
 
-from grqe.corpus.build_index import build_binary_index, build_unary_index
-from grqe.corpus.corpus import Corpus
-from grqe.corpus.encode import encode_corpus
+from grqe.corpus import Corpus, encode_corpus
 from grqe.type_definitions import BinarySignature, UnarySignature
 from grqe.util import progress_bar
 
@@ -46,6 +44,7 @@ def run_encode(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> 
 @dataclass
 class IndexesToBuild:
     configuration_is_invalid: bool = False
+    force_rebuild: bool = False
     unary: set[UnarySignature] = field(default_factory=set)
     binary: set[BinarySignature] = field(default_factory=set)
     spans: dict[str, set[UnarySignature]] = field(default_factory=dict)
@@ -146,19 +145,20 @@ class IndexesToBuild:
             self.unary.update(map(UnarySignature, missing_features))
 
     def _collect_min_frequency(self, args: argparse.Namespace, corpus: Corpus):
-        if args.frequency is not None:
-            if args.frequency.is_integer():
-                self.min_frequency = args.frequency
-            elif 0 < args.frequency < 1:
-                self.min_frequency = args.frequency * len(corpus)
+        if args.min_frequency is not None:
+            if args.min_frequency.is_integer():
+                self.min_frequency = args.min_frequency
+            elif 0 < args.min_frequency < 1:
+                self.min_frequency = args.min_frequency * len(corpus)
             else:
                 self._report_config_error(
-                    f'Invalid minimum frequency. {args.frequency} must be a decimal between 0 and 1, or an integer.'
+                    f'Invalid minimum frequency. {args.min_frequency} must be a decimal between 0 and 1, or an integer.'
                 )
 
     @staticmethod
     def from_args(corpus: Corpus, args: argparse.Namespace) -> IndexesToBuild:
         configuration = IndexesToBuild()
+        configuration.force_rebuild = args.force
         configuration._collect_unary_indexes(args, corpus)
         configuration._collect_binary_indexes(args, corpus)
         configuration._collect_span_indexes(args, corpus)
@@ -177,20 +177,30 @@ def run_index(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> b
         if indexes_to_build.configuration_is_invalid:
             return False
 
-        with progress_bar(len(indexes_to_build), 'Building indexes') as pbar:
-            for unary_index in indexes_to_build.unary:
-                build_unary_index(corpus.tokens()[unary_index.feature])
+    with progress_bar(len(indexes_to_build), 'Building indexes', unit='index') as pbar:
+        pbar: Callable[[], None]
+
+        with Corpus(corpus_name, corpus_dir).lock() as corpus:
+            for unary_index in sorted(indexes_to_build.unary):
+                feature = corpus.feature(unary_index.feature)
+                feature.create_index(force=indexes_to_build.force_rebuild)
                 pbar()
 
             for span, span_indexes in indexes_to_build.spans.items():
-                for span_index in span_indexes:
-                    build_unary_index(corpus.spans()[span][span_index.feature])
+                for span_index in sorted(span_indexes):
+                    feature = corpus.span(span).annotation(span_index.feature)
+                    feature.create_index(force=indexes_to_build.force_rebuild)
                     pbar()
 
-            for binary_index in indexes_to_build.binary:
-                build_binary_index(corpus, binary_index, indexes_to_build.min_frequency)
+        with Corpus(corpus_name, corpus_dir).lock() as corpus:
+            for binary_index in sorted(indexes_to_build.binary):
+                corpus.base.indexes.create_index(
+                    binary_index,
+                    force=indexes_to_build.force_rebuild,
+                    min_frequency=indexes_to_build.min_frequency
+                )
                 pbar()
-        return True
+    return True
 
 
 def main():
@@ -325,7 +335,7 @@ def make_parser() -> argparse.ArgumentParser:
         help='When a binary index is requested, build the underlying unary indexes as well.'
     )
     indexer.add_argument(
-        '--frequency', '--min-frequency', '-f',
+        '--min-frequency', '-m',
         type=float,
         nargs='?',
         metavar='FREQUENCY',
@@ -333,6 +343,12 @@ def make_parser() -> argparse.ArgumentParser:
         help='Only features that appear more than FREQUENCY times will be encoded. '
              'If FREQUENCY is a number between 0 and 1, it will be interpreted as a percentage of the corpus size. '
              f'If no value is provided, {DEFAULT_BINARY_FREQUENCY} will be used.',
+    )
+    indexer.add_argument(
+        '--force', '-f',
+        action='store_true',
+        default=False,
+        help='Create index files even if they already exist.',
     )
 
     return parser
