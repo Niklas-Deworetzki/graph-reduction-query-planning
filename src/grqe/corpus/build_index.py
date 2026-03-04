@@ -1,40 +1,41 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Generator, Iterator
+from typing import Callable, Generator, Iterator, Optional, Sized
 
 from pyroaring import BitMap
 
-from grqe.corpus.corpus import AnnotationsDir, Corpus, IndexDir
 from grqe.corpus.disk import IntArray, IntBytesMap
-from grqe.corpus.index import Index
-from grqe.type_definitions import BinarySignature
+from grqe.corpus.frequencies import Frequencies, compute_occurrences
+from grqe.corpus.index import Index, UnaryIndex
+from grqe.type_definitions import Symbol
+from grqe.util import progress
 
 
-def collect_from_annotations(annotations: AnnotationsDir) -> Generator[tuple[int, int]]:
-    yield from enumerate(annotations.values)
+def collect_from_data(features: IntArray, description: str) -> Generator[tuple[int, int]]:
+    yield from enumerate(progress(features, description, unit_scale=True))
 
 
-def collect_for_binary(corpus: Corpus, signature: BinarySignature,
-                       min_frequency: int = None) -> Generator[tuple[int, int]]:
-    features1 = corpus.tokens()[signature.feature1].values
-    features2 = corpus.tokens()[signature.feature2].values
+def collect_for_binary(
+        description: str,
+        feature1: IntArray, feature1_frequency: Callable[[Symbol], int],
+        distance: int,
+        feature2: IntArray, feature2_frequency: Callable[[Symbol], int],
+        min_frequency: int = None,
+):
+    size = len(feature1) - distance
+    bitshift = feature2.itemsize * 8
 
-    size = len(corpus) - signature.distance
-    bitshift = features2.itemsize * 8
     if min_frequency is None:
-        for pos in range(size):
-            val1 = features1[pos]
-            val2 = features2[pos + signature.distance]
+        for pos in progress(range(size), description, unit_scale=True):
+            val1 = feature1[pos]
+            val2 = feature2[pos + distance]
             yield pos, (val1 << bitshift) + val2
 
     else:
-        unary1 = corpus.base.indexes.unary(signature.feature1)
-        unary2 = corpus.base.indexes.unary(signature.feature2)
-
-        for pos in range(size):
-            val1 = features1[pos]
-            val2 = features2[pos + signature.distance]
-            if len(unary1.search(val1)) >= min_frequency and len(unary2.search(val2)) >= min_frequency:
+        for pos in progress(range(size), description, unit_scale=True):
+            val1 = feature1[pos]
+            val2 = feature2[pos + distance]
+            if feature1_frequency(val1) >= min_frequency and feature2_frequency(val2) >= min_frequency:
                 yield pos, (val1 << bitshift) + val2
 
 
@@ -44,6 +45,8 @@ BITMAP_NATIVE_INTEGER_SIZE = BitMap().to_array().itemsize
 def build_index_via_bitmaps(
         path: Path,
         collected: Iterator[tuple[int, int]],
+        value_track_size: int,
+        write_frequencies_to_file: Path = None,
 ) -> int:
     bitmaps: dict[int, BitMap] = defaultdict(BitMap)
 
@@ -54,11 +57,13 @@ def build_index_via_bitmaps(
 
     sorted_values = sorted(bitmaps.keys())
     max_value = sorted_values[-1]
+    if write_frequencies_to_file is not None:
+        write_frequency_file(write_frequencies_to_file, sorted_values, bitmaps)
 
     small_indexsize = 0
-    big_keys = []
-    big_values = []
-    with IntArray.create(size, path / Index.SMALLSET_FILENAME, max_value=size) as small_index:
+    big_keys: list[int] = []
+    big_values: list[bytes] = []
+    with IntArray.create(size, path / Index.SMALLSET_FILENAME, max_value=value_track_size) as small_index:
 
         for value in sorted_values:
             bitmap = bitmaps[value]
@@ -77,6 +82,9 @@ def build_index_via_bitmaps(
                         small_index[small_indexsize] = element
                         small_indexsize += 1
 
+    del bitmaps
+    del sorted_values
+
     if small_indexsize == 0:
         IntArray.getpath(small_index.path).unlink()
         IntArray.getconfigpath(small_index.path).unlink()
@@ -85,18 +93,52 @@ def build_index_via_bitmaps(
 
     if len(big_keys) > 0:
         IntBytesMap.build(path / Index.BIGSET_FILENAME, big_keys, big_values, size=size, max_value=max_value)
+
+    del big_keys
+    del big_values
     return size
 
 
-def build_binary_index(corpus: Corpus, signature: BinarySignature, min_frequency: int = None):
-    index_dir = corpus.base.indexes.path / IndexDir.filename(signature)
-    index_dir.mkdir(parents=True, exist_ok=True)
-    collect = collect_for_binary(corpus, signature, min_frequency)
-    build_index_via_bitmaps(index_dir, collect)
+def write_frequency_file(file: Path, sorted_keys: list[int], collected_occurrences: dict[int, Sized]):
+    max_key = sorted_keys[-1]
+    max_frequency = max(len(occurrences) for occurrences in collected_occurrences.values())
+
+    frequencies = (len(collected_occurrences[key]) if key in collected_occurrences else 0
+                   for key in range(max_key + 1))
+    IntArray.build(file, frequencies, size=max_key + 1, max_value=max_frequency)
 
 
-def build_unary_index(annotations: AnnotationsDir):
-    index_dir = annotations.index_path
+def build_binary_index(
+        description: str, index_dir: Path,
+        feature1: UnaryIndex, feature1_frequency: Optional[Frequencies],
+        distance: int,
+        feature2: UnaryIndex, feature2_frequency: Optional[Frequencies],
+        min_frequency: int = None,
+):
     index_dir.mkdir(parents=True, exist_ok=True)
-    collect = collect_from_annotations(annotations)
-    build_index_via_bitmaps(index_dir, collect)
+
+    if feature1_frequency is not None:
+        freq1 = feature1_frequency.for_symbol
+    else:
+        occ1 = compute_occurrences(feature1.feature)
+        freq1 = lambda symbol: occ1[symbol]
+
+    if feature2_frequency is not None:
+        freq2 = feature2_frequency.for_symbol
+    else:
+        occ2 = compute_occurrences(feature2.feature)
+        freq2 = lambda symbol: occ2[symbol]
+
+    collect = collect_for_binary(description, feature1.feature, freq1, distance, feature2.feature, freq2, min_frequency)
+    build_index_via_bitmaps(index_dir, collect, len(feature1.feature))
+
+
+def build_unary_index(
+        description: str,
+        index_dir: Path,
+        values: IntArray,
+        frequencies_file: Path = None,
+):
+    index_dir.mkdir(parents=True, exist_ok=True)
+    collect = collect_from_data(values, description)
+    build_index_via_bitmaps(index_dir, collect, len(values), frequencies_file)
