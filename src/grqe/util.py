@@ -1,5 +1,6 @@
 import math
 import os
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Generator, Iterable, Literal
@@ -39,6 +40,16 @@ def get_integer_size(max_value: int) -> IntegerSize:
 def get_typecode(itemsize: IntegerSize) -> TypeFormat:
     """Returns the memoryview typecode for the given bytesize of unsigned integers"""
     return TYPE_CODES[itemsize]
+
+
+@contextmanager
+def transaction(*files: Path):
+    try:
+        yield ()
+    except Exception as e:
+        for file in files:
+            shutil.rmtree(file)
+        raise e
 
 
 def binsearch_lookup[C: SupportsRichComparison](start: int, end: int, key: C, lookup: Callable[[int], C]) -> bool:

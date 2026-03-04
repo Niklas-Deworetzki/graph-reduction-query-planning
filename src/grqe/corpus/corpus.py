@@ -4,11 +4,14 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager, suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Iterable, Optional, Self, override
+from typing import ClassVar, Generator, Iterable, Optional, Self, override
 
+from grqe.corpus import build_binary_index, build_unary_index
 from grqe.corpus.disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
+from grqe.corpus.frequencies import Frequencies, build_frequency_file
 from grqe.corpus.index import BinaryIndex, Index, UnaryIndex
 from grqe.type_definitions import BinarySignature, Feature, IndexSignature, Symbol, UnarySignature
+from grqe.util import transaction
 
 CORPUS_DIR = Path(os.path.abspath(os.getcwd()))
 
@@ -37,6 +40,9 @@ class Corpus:
 
     def features(self) -> set[str]:
         return set(self.tokens().keys())
+
+    def feature(self, name: str) -> AnnotationsDir:
+        return self.base.tokens.annotation(name)
 
     def tokens(self) -> dict[str, AnnotationsDir]:
         return self.base.tokens.annotations()
@@ -144,10 +150,12 @@ class AnnotationsDir(DirNode):
     symbols_path: Path
     values_path: Path
     index_path: Path
+    frequencies_path: Path
 
     symbols: SymbolCollection
     values: IntArray
     index: Optional[UnaryIndex]
+    frequencies: Optional[Frequencies]
 
     count: int
 
@@ -156,11 +164,13 @@ class AnnotationsDir(DirNode):
         self.symbols_path = self.path / 'symbols'
         self.values_path = self.path / 'values'
         self.index_path = self.path / 'index'
+        self.frequencies_path = self.path / 'frequencies'
 
         self.count = count
         self.symbols = None
         self.values = None
         self.index = None
+        self.frequencies = None
 
     @override
     def acquire(self):
@@ -169,6 +179,8 @@ class AnnotationsDir(DirNode):
         self.values = IntArray(self.values_path)
         with suppress(FileNotFoundError):
             self.index = UnaryIndex(self.index_path, self.values)
+        with suppress(FileNotFoundError):
+            self.frequencies = Frequencies(self.frequencies_path)
 
     @override
     def release(self):
@@ -193,6 +205,26 @@ class AnnotationsDir(DirNode):
         self.values = IntArray.create(
             self.count, self.values_path, max_value=len(self.symbols)
         )
+
+    def create_index(self, force: bool = False, include_frequencies: bool = True):
+        if self.index_path.exists() and not force:
+            return
+
+        if self.path.parent.name != 'tokens':
+            description = f'{self.path.parent.name}.{self.path.name}'
+        else:
+            description = self.path.name
+
+        frequencies_path = self.frequencies_path if include_frequencies else None
+        with transaction(self.index_path):
+            build_unary_index(description, self.index_path, self.values, frequencies_path)
+
+    def create_frequencies(self, force: bool = False):
+        if self.frequencies_path.exists() and not force:
+            return
+
+        with transaction(self.frequencies_path):
+            build_frequency_file(self.frequencies_path, self.values)
 
 
 class TokensDir(DirNode):
@@ -375,3 +407,24 @@ class IndexDir(DirNode):
     def binary(self, feature1: str, distance: int, feature2: str) -> BinaryIndex:
         signature = BinarySignature(feature1, distance, feature2)
         return self._lookup(signature, BinaryIndex, self.binary_indexes)
+
+    def create_index(self, signature: IndexSignature, force: bool = False, min_frequency: int = None):
+        if isinstance(signature, UnarySignature):
+            self.corpus.base.tokens.annotation(signature.feature).create_index(force=force)
+
+        elif isinstance(signature, BinarySignature):
+            index_path = self.path / self.filename(signature)
+
+            if index_path.exists() and not force:
+                return
+
+            feature1 = self.corpus.tokens()[signature.feature1]
+            feature2 = self.corpus.tokens()[signature.feature2]
+            with transaction(index_path):
+                build_binary_index(
+                    str(signature), index_path,
+                    feature1.index, feature1.frequencies,
+                    signature.distance,
+                    feature2.index, feature2.frequencies,
+                    min_frequency
+                )
