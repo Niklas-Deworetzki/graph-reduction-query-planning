@@ -133,7 +133,7 @@ class Node(ABC):
 
     def has_fixed_width(self) -> bool:
         """True, if there is only one possible width for results of the given node."""
-        return len(self.possible_widths()) == 1
+        return self.possible_widths().has_fixed_width()
 
     def width(self) -> int:
         """Returns the width of this node or raises an exception if this node does not have a fixed width."""
@@ -333,7 +333,7 @@ class Repeat(Node):
     @override
     def possible_widths(self) -> Width:
         element_widths = self.element.possible_widths()
-        if element_widths.is_unbounded() and len(element_widths) == 0:
+        if not element_widths.is_unbounded() and len(element_widths) == 0:
             return element_widths
         return Width.unbounded()
 
