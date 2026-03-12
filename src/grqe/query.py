@@ -198,7 +198,7 @@ def node_type(*fields: str,
         # Apply @dataclass(unsafe_hash=True) to the provided class.
         # This generates a fitting hash function, turning the instances hashable.
         cls = dataclass(unsafe_hash=True)(cls)
-        assert issubclass(cls, Node), '@node_type used to define AST node is not subclass of Node.'
+        assert issubclass(cls, Node), f'@{node_type.__name__} must be used on a subclass of {Node.__name__}'
 
         # Set the class-level fields.
         cls.arity = None if var_arity else len(fields)
@@ -261,11 +261,6 @@ class SpanLookup(Node):
     @override
     def possible_widths(self) -> Width:
         return Width.unbounded()
-
-
-# @node_type('element')
-# class Negation(Node):
-#    element: Node
 
 
 @node_type('elements', var_arity=True, associative=True, commutative=True, idempotent=True)
