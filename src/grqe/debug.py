@@ -128,9 +128,9 @@ def visualize_annotated(
             res += f'{chan_val:0>2X}'
         return res
 
-    def score_format(node: Node) -> Tuple[str, dict[str, Any]]:
+    def colored_formatting(node: Node) -> Tuple[str, dict[str, Any]]:
         node_text = f'{_graphviz_node_display(node)}\\n{score_format(score(node))}\\n'
         node_color = interpolate_color('#FBEF76', '#FA5C5C', score(node))
         return node_text, {'fillcolor': node_color}
 
-    return _graphviz_visualization(root, score_format, comment)
+    return _graphviz_visualization(root, colored_formatting, comment)
