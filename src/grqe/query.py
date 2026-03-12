@@ -326,6 +326,14 @@ class Arbitrary(Node):
         return Width.of(1)
 
 
+@node_type()
+class Epsilon(Node):
+
+    @override
+    def possible_widths(self) -> Width:
+        return Width.of(0)
+
+
 @node_type('element')
 class Repeat(Node):
     element: Node
