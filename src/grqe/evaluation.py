@@ -48,6 +48,15 @@ class FullEvaluator:
 
                 node.value = res
 
+            case Arbitrary():
+                start_time = current_time()
+
+                bitmap = BitMap()
+                bitmap.add_range(0, len(self.corpus) - 1)
+                node.value = BucketRangeSet({
+                    1: bitmap
+                })
+
             case Repeat():
                 self.eval_node(node.element)
 
