@@ -6,7 +6,7 @@ from typing import Any, Callable, ClassVar, Optional, Tuple
 
 import graphviz
 
-from grqe.query import Lookup, Node
+from grqe.query import Lookup, Node, SpanLookup
 
 current_time: Callable[[], int] = time.perf_counter_ns
 
@@ -59,11 +59,15 @@ _GRAPHVIZ_NODE_STYLE = {
 
 
 def _graphviz_node_display(node: Node) -> str:
-    if isinstance(node, Lookup):
-        atoms = [f'{atom.key}@{atom.relative_position}=\"{atom.value}\"' for atom in node.atoms]
-        return '[' + ', '.join(atoms) + ']'
-    else:
-        return str(type(node).__name__)
+    match node:
+        case Lookup():
+            atoms = [f'{atom.key}@{atom.relative_position}=\"{atom.value}\"' for atom in node.atoms]
+            return '[' + ', '.join(atoms) + ']'
+        case SpanLookup():
+            atoms = [f'{atom.key}=\"{atom.value}\"' for atom in node.atoms]
+            return f'<{node.span} {', '.join(atoms)}>'
+    return str(type(node).__name__)
+
 
 
 def _graphviz_visualization(
