@@ -8,6 +8,9 @@ def immutable_lists(xs):
     return st.lists(xs, min_size=1).map(tuple)
 
 
+strings = st.text(min_size=1, max_size=10)
+
+
 @st.composite
 def lookups(draw):
     offsets = draw(st.lists(st.integers(min_value=0, max_value=10), min_size=1))
@@ -15,23 +18,31 @@ def lookups(draw):
     normalized_offsets = (offset - min_offset for offset in offsets)
 
     atoms = [
-        Atom(offset, draw(st.text(min_size=1, max_size=10)), draw(st.text(min_size=1, max_size=10)))
+        Atom(offset, draw(strings), draw(strings))
         for offset in normalized_offsets
     ]
     return Lookup(atoms)
 
 
+span_lookups = st.builds(
+    SpanLookup,
+    st.sampled_from(['span', 's', 'p', 'text']),
+    st.lists(st.builds(SpanAtom, strings, strings))
+)
+
+
 def nodes():
     def rec(xs):
-        return st.builds(Conjunction, immutable_lists(xs)) \
-            | st.builds(Disjunction, immutable_lists(xs)) \
-            | st.builds(Alternative, immutable_lists(xs)) \
-            | st.builds(Sequence, immutable_lists(xs)) \
-            | st.builds(Subtraction, xs, xs)
+        strats = []
+        for constructing_type in Node.OPERATOR_TYPES:
+            if constructing_type.arity is None:
+                strats.append(st.builds(constructing_type, immutable_lists(xs)))
+            elif constructing_type not in {Lookup, SpanLookup}:
+                args = [xs for _ in range(constructing_type.arity)]
+                strats.append(st.builds(constructing_type, *args))
+        return st.one_of(strats)
 
-    base = st.just(Arbitrary()) \
-           | st.just(Epsilon()) \
-           | lookups()
+    base = span_lookups | lookups()
     return st.recursive(base, extend=rec)
 
 
