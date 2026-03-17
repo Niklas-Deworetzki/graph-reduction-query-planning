@@ -34,6 +34,9 @@ class Width:
     def has_fixed_width(self) -> bool:
         return not self.is_unbounded() and len(self.widths) == 1
 
+    def __contains__(self, item):
+        return not self.is_unbounded() and item in self.widths
+
     def __add__(self, other: Width) -> Width:
         if self.is_unbounded() or other.is_unbounded(): return Width.unbounded()
         return Width({
