@@ -91,7 +91,7 @@ class FullEvaluator:
                 min_off = min(atom.relative_position for atom in node.atoms)
                 max_off = max(atom.relative_position for atom in node.atoms)
                 lookup_positions = self.lookup_strategy.perform_lookup(node, offset=min_off)
-                node.value = BucketRangeSet({max_off - min_off: lookup_positions})
+                node.value = BucketRangeSet({max_off - min_off + 1: lookup_positions})
 
             case SpanLookup():
                 start_time = current_time()
