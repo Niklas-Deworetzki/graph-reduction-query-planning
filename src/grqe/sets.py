@@ -19,6 +19,10 @@ class BucketRangeSet(collections.abc.Set[Range]):
             data[y - x].add(x)
         return BucketRangeSet(data)
 
+    @staticmethod
+    def empty() -> 'BucketRangeSet':
+        return BucketRangeSet({})
+
     def __init__(self, buckets: Dict[int, BitMap]):
         self.buckets = buckets
 
@@ -40,6 +44,8 @@ class BucketRangeSet(collections.abc.Set[Range]):
             key: self.buckets[key] | other.buckets[key]
             for key in common_keys
         }
+
+        # Just copy the reference for all non-shared keys.
         for key in (self.buckets.keys() - common_keys):
             buckets[key] = self.buckets[key]
         for key in (other.buckets.keys() - common_keys):
@@ -52,25 +58,53 @@ class BucketRangeSet(collections.abc.Set[Range]):
             key: self.buckets[key] - other.buckets[key]
             for key in common_keys
         }
+
+        # Non shared keys are not modified.
         for key in (self.buckets.keys() - common_keys):
             buckets[key] = self.buckets[key]
         return BucketRangeSet(buckets)
 
+    def _flatten(self, excluded_suffix: int = 0) -> BitMap:
+        result = BitMap()
+        for size, startpoints in self.buckets.items():
+            for startpoint in startpoints:
+                endpoint = startpoint + size - excluded_suffix
+                if endpoint >= startpoint:
+                    result.add_range(startpoint, endpoint + 1)  # +1 because end is exclusive.
+        return result
+
     def covered_by(self, container: 'BucketRangeSet') -> 'BucketRangeSet':
-        buckets = {}
-        for self_size, self_startpoints in self.buckets.items():
-            mask = BitMap()
+        # This implementation assumes that regions in the container are non-overlapping.
+        # We then build a mask of all the possible positions in which a length-n match can start
+        #  and be contained in the container. (That is [c.start, c.end - n] for each c in container)
+        # As this has at least one 0 at the end of each span in the container, we can then use
+        #  shift and & to quickly compute a mask for n + 1 length matches; iterating all
+        #  match lengths from smallest to biggest.
 
-            for container_size, container_startpoints in container.buckets.items():
-                for container_startpoint in container_startpoints:
-                    endpoint = container_startpoint + container_size + 1 - self_size
-                    if endpoint > container_startpoint:
-                        mask.add_range(container_startpoint, endpoint)
+        if not self.buckets:
+            return BucketRangeSet.empty()
 
-            bucket = mask & self_startpoints
-            if len(bucket) > 0:
-                buckets[self_size] = bucket
-        return BucketRangeSet(buckets)
+        result = {}
+
+        widths = sorted(self.buckets.keys())
+        if widths[0] == 0:
+            # Special case for length 0, because spans are not 0-terminated in the mask here.
+            widths = widths[1:]
+            result[0] = container._flatten() & self.buckets[0]
+
+            if not widths:  # No other lengths available, just length-0 done.
+                return BucketRangeSet(result)
+
+        active_key = widths[0]
+        mask = container._flatten(active_key)
+        for self_size in widths:
+            self_startpoints = self.buckets[self_size]
+            for _ in range(self_size - active_key):
+                mask &= mask.shift(-1)
+            active_key = self_size
+
+            result[self_size] = self_startpoints & mask
+        return BucketRangeSet(result)
 
     def join(self, other: 'BucketRangeSet', distance: int = 0) -> 'BucketRangeSet':
         buckets: Dict[int, BitMap] = {}
