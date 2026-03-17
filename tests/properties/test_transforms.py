@@ -1,7 +1,10 @@
-from hypothesis import given, strategies as st
+from hypothesis import given, settings, strategies as st
 
 from grqe.query import *
 from grqe.transformations import *
+
+settings.register_profile('ast', max_examples=1000)
+settings.load_profile('ast')
 
 
 def immutable_lists(xs):
