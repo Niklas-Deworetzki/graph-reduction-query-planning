@@ -348,4 +348,13 @@ class Contained(Node):
 
     @override
     def possible_widths(self) -> Width:
-        return self.element.possible_widths()
+        element_widths = self.element.possible_widths()
+        container_widths = self.container.possible_widths()
+        if element_widths.is_unbounded() or container_widths.is_unbounded():
+            return element_widths
+
+        possible_widths = {
+            ew for ew in element_widths
+            if any(ew < cw for cw in container_widths)
+        }
+        return Width(possible_widths)
