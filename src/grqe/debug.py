@@ -69,7 +69,6 @@ def _graphviz_node_display(node: Node) -> str:
     return str(type(node).__name__)
 
 
-
 def _graphviz_visualization(
         root: Node,
         node_format: Callable[[Node], Tuple[str, dict[str, Any]]],
@@ -117,6 +116,9 @@ def visualize_annotated(
     max_score = max(score(n) for n in all_nodes)
 
     def interpolate_color(col_min: str, col_max: str, value: int) -> str:
+        if max_score == min_score:
+            return col_max
+
         res = '#'
         for channel in range(3):
             chan_min = int(col_min[1 + 2 * channel: 1 + 2 * (channel + 1)], 16)
