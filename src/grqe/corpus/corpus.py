@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager, suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Generator, Iterable, Optional, Self, override
+from typing import ClassVar, Generator, Iterable, Literal, Optional, Self, override
 
 from grqe.corpus import build_binary_index, build_unary_index
 from grqe.corpus.disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
@@ -194,7 +194,7 @@ class AnnotationsDir(DirNode):
             self.index.close()
             self.index = None
 
-    def to_symbol(self, value: bytes) -> Symbol:
+    def to_symbol(self, value: bytes) -> Symbol | Literal[-1]:
         return self.symbols.to_symbol(value)
 
     def write_symbols(self, values: set[bytes]):

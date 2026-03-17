@@ -236,8 +236,8 @@ class SymbolCollection(OnDisk, Array[bytes]):
     def from_symbol(self, symbol: Symbol) -> bytes:
         return self[symbol]
 
-    def to_symbol(self, name: bytes) -> Symbol:
-        return binsearch(0, len(self) - 1, name, self._bytesarray.__getitem__)
+    def to_symbol(self, name: bytes) -> Symbol | Literal[-1]:
+        return binsearch(0, len(self) - 1, name, self._bytesarray.__getitem__, error=False)
 
     @staticmethod
     def build(path: Path, names: Iterable[bytes]) -> int:
