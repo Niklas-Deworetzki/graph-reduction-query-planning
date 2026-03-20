@@ -52,10 +52,35 @@ def profile(task: str, **kwargs):
     return ProfilingMeasurement(task, metadata=kwargs)
 
 
+def format_time(ns: int) -> str:
+    if ns < 1000:
+        return str(ns)
+    if ns < 1000 * 1000:
+        return '%.2fµs' % (ns / 1000)
+    if ns < 1000 * 1000 * 1000:
+        return '%.2fms' % (ns / 1000 / 1000)
+    return '%.2fs' % (ns / 1000 / 1000 / 1000)
+
+
 _GRAPHVIZ_NODE_STYLE = {
     'shape': 'box',
     'style': 'filled',
 }
+
+_GRAPHVIZ_EDGE_STYLE = {
+    'dir': 'back',
+}
+
+_GRAPHVIZ_STYLE = {
+    'fontname': 'monospace',
+    'fontsize': '8',
+}
+
+MIN_COLOR = '#FBEF76'
+MAX_COLOR = '#FA5C5C'
+
+MIN_EDGE_WEIGHT = 0.5
+MAX_EDGE_WEIGHT = 3
 
 
 def _graphviz_node_display(node: Node) -> str:
@@ -69,54 +94,22 @@ def _graphviz_node_display(node: Node) -> str:
     return str(type(node).__name__)
 
 
-def _graphviz_visualization(
-        root: Node,
-        node_format: Callable[[Node], Tuple[str, dict[str, Any]]],
-        comment: str = None,
-) -> graphviz.Digraph:
+def visualize_execution_stats(root: Node, comment: str = None) -> graphviz.Digraph:
     all_nodes = list(root.flatten())
+
+    max_execution_time = max(n.time for n in all_nodes)
+    min_execution_time = min(n.time for n in all_nodes)
+
+    max_result_size = max(len(n.value) for n in all_nodes)
+    min_result_size = min(len(n.value) for n in all_nodes)
+
     node_ids = {
         id(node): str(i)
-        for i, node in enumerate(root.flatten())
+        for i, node in enumerate(all_nodes, start=1)
     }
 
-    graph = graphviz.Digraph(node_attr=_GRAPHVIZ_NODE_STYLE, comment=comment or 'auto-generated graphviz')
-    for node in all_nodes:
-        node_text, metadata = node_format(node)
-        str_id = node_ids[id(node)]
-        graph.node(str_id, node_text, **metadata)
-
-    def edges(n: Node, inbound: Optional[str]):
-        str_id = node_ids[id(n)]
-        if inbound:
-            graph.edge(inbound, str_id)
-
-        for child in n.children():
-            edges(child, str_id)
-
-    edges(root, None)
-    return graph
-
-
-def visualize(root: Node, comment: str = None) -> graphviz.Digraph:
-    def plain_format(node: Node) -> Tuple[str, dict[str, Any]]:
-        return _graphviz_node_display(node), {}
-
-    return _graphviz_visualization(root, plain_format, comment)
-
-
-def visualize_annotated(
-        root: Node,
-        score: Callable[[Node], int],
-        score_format: Callable[[int], str] = str,
-        comment: str = None
-) -> graphviz.Digraph:
-    all_nodes = list(root.flatten())
-    min_score = min(score(n) for n in all_nodes)
-    max_score = max(score(n) for n in all_nodes)
-
-    def interpolate_color(col_min: str, col_max: str, value: int) -> str:
-        if max_score == min_score:
+    def interpolate_color(col_min: str, col_max: str, val_min: int, val_max: int, value: int) -> str:
+        if val_min == val_max:
             return col_max
 
         res = '#'
@@ -124,15 +117,46 @@ def visualize_annotated(
             chan_min = int(col_min[1 + 2 * channel: 1 + 2 * (channel + 1)], 16)
             chan_max = int(col_max[1 + 2 * channel: 1 + 2 * (channel + 1)], 16)
 
-            chan_val = (value - min_score) / (max_score - min_score) * chan_max + \
-                       (1 - (value - min_score) / (max_score - min_score)) * chan_min
+            perc = (value - val_min) / (val_max - val_min)
+            chan_val = perc * chan_max + (1 - perc) * chan_min
             chan_val = round(chan_val)
             res += f'{chan_val:0>2X}'
         return res
 
-    def colored_formatting(node: Node) -> Tuple[str, dict[str, Any]]:
-        node_text = f'{_graphviz_node_display(node)}\\n{score_format(score(node))}\\n'
-        node_color = interpolate_color('#FBEF76', '#FA5C5C', score(node))
-        return node_text, {'fillcolor': node_color}
+    graph = graphviz.Digraph(
+        comment=comment or 'auto-generated graphviz',
+        node_attr=_GRAPHVIZ_NODE_STYLE | _GRAPHVIZ_STYLE,
+        edge_attr=_GRAPHVIZ_EDGE_STYLE | _GRAPHVIZ_STYLE,
+    )
+    graph.node('0', style='invis')
 
-    return _graphviz_visualization(root, colored_formatting, comment)
+    for node in all_nodes:
+        node_text = f'{_graphviz_node_display(node)}\\n{format_time(node.time)}\\n'
+        node_color = interpolate_color(
+            MIN_COLOR, MAX_COLOR,
+            min_execution_time, max_execution_time,
+            node.time)
+
+        str_id = node_ids[id(node)]
+        graph.node(str_id, node_text, fillcolor=node_color)
+
+    def edges(n: Node, inbound: Optional[str]):
+        str_id = node_ids[id(n)]
+        if inbound:
+            edge_text = str(len(n.value))
+            edge_color = interpolate_color(
+                MIN_COLOR, MAX_COLOR,
+                min_result_size, max_result_size,
+                len(n.value)
+            )
+
+            perc = (len(n.value) - min_result_size) / (
+                        max_result_size - min_result_size) if max_result_size != min_result_size else 1
+            edge_weight = perc * MAX_EDGE_WEIGHT + (1 - perc) * MIN_EDGE_WEIGHT
+            graph.edge(inbound, str_id, edge_text, fillcolor=edge_color, arrowsize=str(edge_weight))
+
+        for child in n.children():
+            edges(child, str_id)
+
+    edges(root, '0')
+    return graph
