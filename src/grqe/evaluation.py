@@ -7,7 +7,7 @@ from grqe.debug import LOGGER, current_time
 from grqe.fetch import LookupStrategy
 from grqe.corpus import Corpus
 from grqe.query import *
-
+from grqe.sets import BucketRangeSet
 
 class Evaluator(Protocol):
 
@@ -62,11 +62,12 @@ class FullEvaluator:
 
                 start_time = current_time()
 
-                accum = node.element.value.copy()
-                step = accum.copy()
-                while len(step) > 0:
-                    step = step.join(node.element.value.copy())
-                    accum = accum | step
+                step = node.element.value.copy()
+                accum = BucketRangeSet.empty()
+                incr = step
+                while len(incr):
+                    accum = accum | incr
+                    incr = incr.join(step)
                 node.value = accum
 
             case Contained():
