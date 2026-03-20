@@ -35,6 +35,22 @@ class Corpus:
         finally:
             self.base.release()
 
+    def decode(self, positions: Iterable[int], features: Iterable[Feature]) -> dict[Feature, list[bytes]]:
+        decoders: list[tuple[AnnotationsDir, list[bytes]]] = []
+        result = {}
+
+        for feature in features:
+            decoded = []
+            result[feature] = decoded
+
+            feature_track = self.base.tokens.annotation(feature)
+            decoders.append((feature_track, decoded))
+
+        for position in positions:
+            for annotation, decoded in decoders:
+                decoded.append(annotation.value_at(position))
+        return result
+
     def get_symbol(self, feature: Feature, value: bytes) -> Symbol:
         return self.base.tokens.annotation(feature).to_symbol(value)
 
@@ -196,6 +212,12 @@ class AnnotationsDir(DirNode):
 
     def to_symbol(self, value: bytes) -> Symbol | Literal[-1]:
         return self.symbols.to_symbol(value)
+
+    def from_symbol(self, symbol: Symbol) -> bytes:
+        return self.symbols.from_symbol(symbol)
+
+    def value_at(self, position: int) -> bytes:
+        return self.from_symbol(self.values[position])
 
     def write_symbols(self, values: set[bytes]):
         SymbolCollection.build(self.symbols_path, values)
