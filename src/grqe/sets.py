@@ -4,6 +4,8 @@ from typing import Dict, Iterator, Tuple
 
 from pyroaring import BitMap
 
+from grqe.profiling import profile
+
 type Range = Tuple[int, int]
 
 type RangeSet = collections.abc.Set[Range]
@@ -64,14 +66,16 @@ class BucketRangeSet(collections.abc.Set[Range]):
             buckets[key] = self.buckets[key]
         return BucketRangeSet(buckets)
 
-    def _flatten(self, excluded_suffix: int = 0) -> BitMap:
-        result = BitMap()
+    def _flatten(self) -> tuple[BitMap, BitMap]:
+        covered = BitMap()
+        endpoints = BitMap()
+
         for size, startpoints in self.buckets.items():
             for startpoint in startpoints:
-                endpoint = startpoint + size - excluded_suffix
-                if endpoint >= startpoint:
-                    result.add_range(startpoint, endpoint + 1)  # +1 because end is exclusive.
-        return result
+                endpoint = startpoint + size
+                covered.add_range(startpoint, endpoint)
+                endpoints.add(endpoint)
+        return covered, endpoints
 
     def covered_by(self, container: 'BucketRangeSet') -> 'BucketRangeSet':
         # This implementation assumes that regions in the container are non-overlapping.
@@ -87,20 +91,22 @@ class BucketRangeSet(collections.abc.Set[Range]):
         result = {}
 
         widths = sorted(self.buckets.keys())
-        if widths[0] == 0:
-            # Special case for length 0, because spans are not 0-terminated in the mask here.
-            widths = widths[1:]
-            result[0] = container._flatten() & self.buckets[0]
+        with profile('covered_by.mask'):
+            mask, endpoints = container._flatten()
 
-            if not widths:  # No other lengths available, just length-0 done.
+        while widths[0] <= 1:
+            width, *widths = widths
+            result[width] = mask & self.buckets[width]
+
+            if not widths:  # No other lengths available.
                 return BucketRangeSet(result)
 
-        active_key = widths[0]
-        mask = container._flatten(active_key)
+        active_key = 1
         for self_size in widths:
             self_startpoints = self.buckets[self_size]
             for _ in range(self_size - active_key):
-                mask &= mask.shift(-1)
+                mask -= endpoints
+                endpoints = endpoints.shift(-1)
             active_key = self_size
 
             result[self_size] = self_startpoints & mask
@@ -150,6 +156,7 @@ class BucketRangeSet(collections.abc.Set[Range]):
         return length in self.buckets and l in self.buckets[length]
 
     def __iter__(self) -> Iterator[Range]:
+        # TODO: Make this better
         xs = [(p, p + length) for length, bm in self.buckets.items() for p in bm]
         xs.sort()
         yield from xs

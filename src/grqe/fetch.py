@@ -6,7 +6,8 @@ import networkx as nx
 from pyroaring import BitMap
 
 from grqe.corpus import AnnotationsDir, Corpus, IntArray, BinaryIndex, SpanDir, UnaryIndex
-from grqe.debug import LOGGER, profile
+from grqe.profiling import profile
+from grqe.debug import LOGGER
 from grqe.query import Lookup, SpanLookup
 from grqe.sets import Range
 from grqe.type_definitions import Feature, Symbol
@@ -96,7 +97,7 @@ class GraphBasedIndexLookup:
         elif len(attributes) == 0:
             return span.ranges
 
-        with profile('span fetching'):
+        with profile('span.search'):
             matching_span_ids = []
             for attribute in attributes:
                 if attribute.resolved_feature.index is not None:
@@ -155,11 +156,11 @@ class GraphBasedIndexLookup:
             return BitMap()
 
         # Prefetch index lookups
-        with profile('prefetching'):
+        with profile('leaf.prefetch'):
             prefetched = self._prefetch(attributes)
 
         # Build index selection graph
-        with profile('graph solving'):
+        with profile('leaf.index_plan'):
             corpus_size = len(self.corpus)
             graph = nx.Graph()
             graph.add_weighted_edges_from(
@@ -168,7 +169,7 @@ class GraphBasedIndexLookup:
 
             index_selection = nx.min_edge_cover(graph)
 
-        with profile('result allocation'):
+        with profile('leaf.result'):
             # Actually combine results from selected indexes.
             index_lookups: list[BitMap] = []
             for a_l, a_r in index_selection:

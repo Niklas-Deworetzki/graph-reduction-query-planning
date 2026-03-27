@@ -1,10 +1,9 @@
+import collections
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property, reduce
-from typing import Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
-
-from grqe.sets import BucketRangeSet
+from typing import Any, Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, Tuple, override
 
 __all__ = [
     'Cost', 'Value', 'Width', 'Atom', 'SpanAtom', 'Node',
@@ -12,7 +11,7 @@ __all__ = [
 
 Cost = float
 
-Value = BucketRangeSet
+Value = collections.abc.Set[Tuple[int, int]]
 
 
 @dataclass(frozen=True, order=True)
@@ -94,6 +93,7 @@ class Node(ABC):
     # Mark all the instance fields for proper behavior.
     cost: Cost = __inherited_to_subclasses
     value: Optional[Value] = __inherited_to_subclasses
+    _profiling_info: Optional[dict[str, Any]] = __inherited_to_subclasses
     _refcount: int = __inherited_to_subclasses
 
     # Set statically for each subclass to define specific subclass behavior.
@@ -106,6 +106,7 @@ class Node(ABC):
     def __post_init__(self):
         self.cost = math.inf
         self.value = None
+        self._profiling_info = None
 
         # Initialize reference counting.
         self._refcount = 0

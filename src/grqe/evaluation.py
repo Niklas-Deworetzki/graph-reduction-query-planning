@@ -3,7 +3,8 @@ from typing import Protocol
 
 from pyroaring import BitMap
 
-from grqe.debug import LOGGER, current_time
+from grqe.profiling import commit_profiling_data, profile, current_time
+from grqe.debug import LOGGER
 from grqe.fetch import LookupStrategy
 from grqe.corpus import Corpus
 from grqe.query import *
@@ -98,15 +99,18 @@ class FullEvaluator:
                 start_time = current_time()
 
                 res = defaultdict(BitMap)
-                for start, end in self.lookup_strategy.lookup_span(node):
-                    res[end - start].add(start)
+                with profile('span.io'):
+                    ranges = list(self.lookup_strategy.lookup_span(node))
+                with profile('span.to_bitmap'):
+                    for start, end in ranges:
+                        res[end - start].add(start)
                 node.value = BucketRangeSet(res)
 
             case _:
                 raise NotImplementedError()
 
         elapsed = current_time() - start_time
-        node.time = elapsed
+        node._profiling_info = commit_profiling_data(time=elapsed, size=str(len(node.value)))
 
     def eval_fully(self, node: Node) -> Value:
         self.eval_node(node)
