@@ -103,7 +103,17 @@ def test_flatten_preserves_order(sequence: Sequence):
     assert original_leaf_order == flattened_leaf_order, 'Operand order has changed during flattening.'
 
 
+@given(nodes())
+def test_sanitize_removes_epsilon(node: Node):
+    sanitized = sanitize(node)
+
+    widths = sanitized.possible_widths()
+    if 0 in widths:
+        assert isinstance(sanitized, Epsilon), 'Epsilon is supposed to be root after sanitize.'
+
+
 test_canonical_form()
 test_remove_neutral_elements()
 test_flatten()
 test_flatten_preserves_order()
+test_sanitize_removes_epsilon()

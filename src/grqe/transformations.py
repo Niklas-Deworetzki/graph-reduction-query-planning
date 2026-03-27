@@ -334,3 +334,38 @@ def fuse_leaves(root: Node) -> Node:
             return Sequence(partitions)
 
     return root.construct(rec)
+
+
+def sanitize(root: Node) -> Node:
+    if root.arity == 0:
+        return root
+
+    match root:
+        case Subtraction(lhs=lhs, rhs=rhs):
+            lhs = sanitize(lhs)
+            rhs = sanitize(rhs)
+            if isinstance(lhs, Epsilon) or isinstance(rhs, Epsilon):
+                return lhs
+            return Subtraction(lhs, rhs)
+
+        case Contained(element=lhs, container=rhs):
+            lhs = sanitize(lhs)
+            rhs = sanitize(rhs)
+            if isinstance(lhs, Epsilon) or isinstance(rhs, Epsilon):
+                return Epsilon()
+            return Contained(lhs, rhs)
+
+        case Repeat(element=element):
+            element = sanitize(element)
+            if isinstance(element, Epsilon):
+                return element
+            return Repeat(element)
+
+    assert root.arity is None, 'Sanitization requires special case for non-variable arity operator.'
+    children = [
+        sanitized for child in root.children()
+        if (sanitized := sanitize(child)) and not isinstance(sanitized, Epsilon)
+    ]
+    if not children:
+        return Epsilon()
+    return root.construct(children)
