@@ -86,12 +86,12 @@ def _iterate_entries(info: dict) -> Iterator[tuple[str, str]]:
     for field in fields:
         value = info.get(field)
         if isinstance(value, int):
-            value = _format_time(value)
+            value = format_time(value)
         if value is not None:
             yield escape(field), escape(value)
 
 
-def _format_time(ns: int) -> str:
+def format_time(ns: int) -> str:
     if ns < 1000:
         return str(ns)
     if ns < 1000 * 1000:

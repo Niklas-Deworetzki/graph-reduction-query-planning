@@ -8,7 +8,9 @@ dependencies = [
     'pyroaring==1.0.*',
     'lark==1.3.*',
     'networkx==3.*',
-    'graphviz==0.21'
+    'graphviz==0.21',
+
+    'Flask==3.1.3',
 ]
 
 [project.optional-dependencies]
