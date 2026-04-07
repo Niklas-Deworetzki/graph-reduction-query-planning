@@ -1,3 +1,5 @@
+from io import BytesIO
+
 from hypothesis import given, strategies as st
 
 from grqe.sets import BucketRangeSet
@@ -197,8 +199,22 @@ TEST_OPERATOR_LAWS = [
     test_sequence_distributes_over_disjunction,
 ]
 
+
+@given(set_of_ranges())
+def test_serialization(s):
+    a = BucketRangeSet.of(s)
+
+    io = BytesIO()
+    a.serialize(io)
+    io.seek(0)
+    b = BucketRangeSet.deserialize(io)
+    assert a == b
+
+
 for test in TEST_OPERATOR_SEMANTICS:
-    test()
+   test()
 
 for test in TEST_OPERATOR_LAWS:
-    test()
+   test()
+
+test_serialization()

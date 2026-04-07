@@ -2,6 +2,7 @@ import collections
 import heapq
 import struct
 from collections import defaultdict
+from io import BytesIO
 from typing import Dict, Iterable, Iterator, Tuple
 
 from pyroaring import BitMap
@@ -162,13 +163,33 @@ class BucketRangeSet(collections.abc.Set[Range]):
         return ((start, start + length) for start in bucket)
 
     def __iter__(self) -> Iterator[Range]:
-        # TODO: Make this better
-        xs = [(p, p + length) for length, bm in self.buckets.items() for p in bm]
-        xs.sort()
-        yield from xs
         iterators = (
             BucketRangeSet._iterate_bucket(length, bucket)
             for length, bucket in self.buckets.items()
         )
         yield from heapq.merge(*iterators)
 
+    def serialize(self, f):
+        f.write(struct.pack('<I', len(self.buckets)))
+
+        for size, bucket in self.buckets.items():
+            data = bucket.serialize()
+            f.write(struct.pack('<II', size, len(data)))
+            f.write(data)
+
+    @classmethod
+    def deserialize(cls, f):
+        bucket_count, = struct.unpack('<I', f.read(4))
+        buckets = {}
+
+        for _ in range(bucket_count):
+            size, payload_size = struct.unpack('<II', f.read(4 + 4))
+            payload = f.read(payload_size)
+            buckets[size] = BitMap.deserialize(payload)
+
+        return cls(buckets)
+
+    def bytesize(self) -> int:
+        with BytesIO() as io:
+            self.serialize(io)
+            return io.tell()
