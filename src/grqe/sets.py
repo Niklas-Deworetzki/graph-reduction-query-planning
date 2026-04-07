@@ -1,6 +1,8 @@
 import collections
+import heapq
+import struct
 from collections import defaultdict
-from typing import Dict, Iterator, Tuple
+from typing import Dict, Iterable, Iterator, Tuple
 
 from pyroaring import BitMap
 
@@ -155,8 +157,18 @@ class BucketRangeSet(collections.abc.Set[Range]):
         length = r - l
         return length in self.buckets and l in self.buckets[length]
 
+    @staticmethod
+    def _iterate_bucket(length, bucket) -> Iterable[Range]:
+        return ((start, start + length) for start in bucket)
+
     def __iter__(self) -> Iterator[Range]:
         # TODO: Make this better
         xs = [(p, p + length) for length, bm in self.buckets.items() for p in bm]
         xs.sort()
         yield from xs
+        iterators = (
+            BucketRangeSet._iterate_bucket(length, bucket)
+            for length, bucket in self.buckets.items()
+        )
+        yield from heapq.merge(*iterators)
+
