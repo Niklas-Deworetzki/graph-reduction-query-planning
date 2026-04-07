@@ -101,6 +101,14 @@ def format_time(ns: int) -> str:
     return '%.2fs' % (ns / 1000 / 1000 / 1000)
 
 
+def format_bytesize(n: int) -> str:
+    for prefix in ['', 'k', 'M', 'G']:
+        if n < 1024:
+            break
+        n //= 1024
+    return f'{n} {prefix}b'
+
+
 def _interpolate_color(val_min: int, val_max: int, value: Optional[int]) -> str:
     if value is None:
         return NO_DATA_COLOR

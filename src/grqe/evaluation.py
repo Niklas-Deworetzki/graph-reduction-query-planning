@@ -1,3 +1,4 @@
+from functools import reduce
 from collections import defaultdict
 from typing import Protocol
 
@@ -9,6 +10,7 @@ from grqe.fetch import LookupStrategy
 from grqe.corpus import Corpus
 from grqe.query import *
 from grqe.sets import BucketRangeSet
+
 
 class Evaluator(Protocol):
 
@@ -43,10 +45,7 @@ class FullEvaluator:
 
                 start_time = current_time()
 
-                res = node.elements[0].value.copy()
-                for element in node.elements[1:]:
-                    res = operation(res, element.value.copy())
-
+                res = reduce(operation, (el.value.copy() for el in node.elements))
                 node.value = res
 
             case Arbitrary():
