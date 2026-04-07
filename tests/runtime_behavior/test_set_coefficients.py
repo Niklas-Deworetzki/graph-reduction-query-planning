@@ -19,10 +19,10 @@ def create_arbitrary_bitmap(corpus_size: int, load: float) -> BitMap:
     return bm
 
 
-def create_arbitrary_set(corpus_size: int, load: float, buckets: int) -> Set:
+def create_arbitrary_set(corpus_size: int, load: float, num_buckets: int) -> Set:
     buckets = {
         1 + i: create_arbitrary_bitmap(corpus_size, load)
-        for i in range(buckets)
+        for i in range(num_buckets)
     }
     return BucketRangeSet(buckets)
 
