@@ -8,6 +8,7 @@ from grqe.profiling import commit_profiling_data, profile, current_time
 from grqe.debug import LOGGER
 from grqe.fetch import LookupStrategy
 from grqe.corpus import Corpus
+from grqe.profiling.display import format_bytesize
 from grqe.query import *
 from grqe.sets import BucketRangeSet
 
@@ -109,7 +110,11 @@ class FullEvaluator:
                 raise NotImplementedError()
 
         elapsed = current_time() - start_time
-        node._profiling_info = commit_profiling_data(time=elapsed, size=str(len(node.value)))
+        node._profiling_info = commit_profiling_data(
+            time=elapsed,
+            size=str(len(node.value)),
+            bytesize=str(format_bytesize(node.value.bytesize()))
+        )
 
     def eval_fully(self, node: Node) -> Value:
         self.eval_node(node)
