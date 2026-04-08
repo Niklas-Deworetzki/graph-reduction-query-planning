@@ -93,7 +93,7 @@ def _iterate_entries(info: dict) -> Iterator[tuple[str, str]]:
 
 def format_time(ns: int) -> str:
     if ns < 1000:
-        return str(ns)
+        return f'{ns}ns'
     if ns < 1000 * 1000:
         return '%.2fus' % (ns / 1000)
     if ns < 1000 * 1000 * 1000:
