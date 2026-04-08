@@ -29,6 +29,7 @@ def main():
 def get_searched(query: str):
     return _list_traces(_search(query))
 
+
 @server.get('/traces/<n>')
 def get_trace(n: int):
     n = int(n)

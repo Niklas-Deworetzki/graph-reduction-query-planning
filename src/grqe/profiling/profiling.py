@@ -81,7 +81,6 @@ if PROFILING_ENABLED:
     def profile(task: str, **kwargs):
         return ProfilingMeasurement(task, {key: str(value) for key, value in kwargs.items()})
 
-
     def commit_profiling_data(**additional_data) -> dict[str, Any]:
         data = {}
         for measurement in ProfilingMeasurement.MEASUREMENTS_TAKEN:
