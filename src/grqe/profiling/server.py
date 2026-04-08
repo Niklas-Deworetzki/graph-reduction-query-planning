@@ -14,8 +14,9 @@ TRACES_PATH = Path(__file__).parent.parent / 'traces'
 
 def get_traces() -> Iterator[str]:
     for filename in TRACES_PATH.iterdir():
-        with open(filename) as trace_file:
-            yield from trace_file
+        if filename.suffix == '.jsonl':
+            with open(filename) as trace_file:
+                yield from trace_file
 
 
 @server.get("/")
