@@ -15,16 +15,16 @@ from grqe.sets import BucketRangeSet
 
 class Evaluator(Protocol):
 
-    def eval_fully(self, node: Node) -> Value:
+    def eval_fully(self, node: Node) -> ResultSet:
         ...
 
 
 class FullEvaluator:
     set_operations: ClassVar[dict] = {
-        Conjunction: lambda a, b: a & b,
-        Disjunction: lambda a, b: a | b,
-        Sequence: lambda a, b: a.join(b),
-        Alternative: lambda a, b: a,
+        Conjunction: BucketRangeSet.conjunction,
+        Disjunction: BucketRangeSet.disjunction,
+        Sequence: BucketRangeSet.sequence,
+        Alternative: lambda *a: a[0],
     }
 
     corpus: Corpus
@@ -42,11 +42,10 @@ class FullEvaluator:
                 for child in node.elements:
                     self.eval_node(child)
 
-                operation = self.set_operations[type(node)]
-
                 start_time = current_time()
 
-                res = reduce(operation, (el.value.copy() for el in node.elements))
+                operation = self.set_operations[type(node)]
+                res = operation(el.value for el in node.elements)
                 node.value = res
 
             case Arbitrary():
@@ -63,12 +62,12 @@ class FullEvaluator:
 
                 start_time = current_time()
 
-                step = node.element.value.copy()
+                step: ResultSet = node.element.value
                 accum = BucketRangeSet.empty()
                 incr = step
                 while len(incr):
                     accum = accum | incr
-                    incr = incr.join(step)
+                    incr = BucketRangeSet.sequence(incr, step)
                 node.value = accum
 
             case Contained():
@@ -77,7 +76,7 @@ class FullEvaluator:
 
                 start_time = current_time()
 
-                node.value = node.element.value.copy().covered_by(node.container.value.copy())
+                node.value = node.element.value.covered_by(node.container.value)
 
             case Subtraction():
                 self.eval_node(node.lhs)
@@ -85,7 +84,7 @@ class FullEvaluator:
 
                 start_time = current_time()
 
-                node.value = node.lhs.value.copy() - node.rhs.value.copy()
+                node.value = node.lhs.value.difference(node.rhs.value)
 
             case Lookup():
                 start_time = current_time()
@@ -113,10 +112,10 @@ class FullEvaluator:
         node._profiling_info = commit_profiling_data(
             time=elapsed,
             size=str(len(node.value)),
-            bytesize=str(format_bytesize(node.value.bytesize()))
+            serialized_bytes=format_bytesize(node.value.bytesize()),
         )
 
-    def eval_fully(self, node: Node) -> Value:
+    def eval_fully(self, node: Node) -> ResultSet:
         self.eval_node(node)
         return node.value
 
@@ -198,7 +197,7 @@ class CostGuidedEvaluator:
 
         return node.cost
 
-    def eval_fully(self, node: Node) -> Value:
+    def eval_fully(self, node: Node) -> ResultSet:
         while not node.is_evaluated():
             self.update_costs(node)
             self.eval_step(node)

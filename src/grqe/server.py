@@ -8,13 +8,13 @@ from grqe.cqp import parse
 from grqe.evaluation import FullEvaluator
 from grqe.profiling import extract_profiling_trace, profile
 from grqe.query import Node
-from grqe.sets import RangeSet
 from grqe.transformations import optimize, sanitize
+from grqe.type_definitions import ResultSet
 
 TRACEFILE_FORMATTING = '%Y-%m-%d %H:%M:%S.jsonl'
 
 
-def execute(query_str: str, evaluator: FullEvaluator) -> tuple[Node, RangeSet]:
+def execute(query_str: str, evaluator: FullEvaluator) -> tuple[Node, ResultSet]:
     query = parse(query_str)
     query = optimize(query)
     query = sanitize(query)

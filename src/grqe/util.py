@@ -2,6 +2,7 @@ import math
 import os
 import shutil
 from contextlib import contextmanager
+from itertools import islice
 from pathlib import Path
 from typing import Callable, Generator, Iterable, Literal
 
@@ -10,11 +11,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
-type ByteOrder = Literal['little', 'big']
 type TypeFormat = Literal['B', 'H', 'I', 'Q']
 type IntegerSize = Literal[1, 2, 4, 8]
 
 TYPE_CODES: dict[IntegerSize, TypeFormat] = {1: 'B', 2: 'H', 4: 'I', 8: 'Q'}
+
+
+def take[T](it: Iterable[T], n: int) -> Iterable[T]:
+    return islice(it, n)
 
 
 def add_suffix(path: Path, suffix: str) -> Path:
