@@ -1,12 +1,75 @@
+import collections
 import re
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar
+from io import BytesIO
+from typing import BinaryIO, ClassVar, Iterable, Tuple
 
 type Feature = str
 type FValue = bytes
 
 type Symbol = int
+
+type Range = Tuple[int, int]
+
+
+class ResultSet(ABC, collections.abc.Set[Range]):
+
+    @classmethod
+    @abstractmethod
+    def of(cls, s: Iterable[Range]) -> 'ResultSet':
+        ...
+
+    @classmethod
+    @abstractmethod
+    def empty(cls) -> 'ResultSet':
+        return cls.of(set())
+
+    @classmethod
+    @abstractmethod
+    def conjunction(cls, *sets: 'ResultSet') -> 'ResultSet':
+        ...
+
+    @classmethod
+    @abstractmethod
+    def disjunction(cls, *sets: 'ResultSet') -> 'ResultSet':
+        ...
+
+    @classmethod
+    @abstractmethod
+    def sequence(cls, *sets: 'ResultSet') -> 'ResultSet':
+        ...
+
+    @abstractmethod
+    def difference(self, other: 'ResultSet') -> 'ResultSet':
+        ...
+
+    @abstractmethod
+    def covered_by(self, container: 'ResultSet') -> 'ResultSet':
+        ...
+
+    def __and__(self, other: 'ResultSet') -> 'ResultSet':
+        return self.conjunction(self, other)
+
+    def __or__(self, other: 'ResultSet') -> 'ResultSet':
+        return self.disjunction(self, other)
+
+    def __sub__(self, other: 'ResultSet') -> 'ResultSet':
+        return self.difference(other)
+
+    @abstractmethod
+    def serialize(self, f: BinaryIO) -> None:
+        ...
+
+    @classmethod
+    @abstractmethod
+    def deserialize(cls, f: BinaryIO) -> 'ResultSet':
+        ...
+
+    def bytesize(self) -> int:
+        with BytesIO() as io:
+            self.serialize(io)
+            return io.tell()
 
 
 class IndexSignature(ABC):

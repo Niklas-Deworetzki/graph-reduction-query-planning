@@ -1,17 +1,16 @@
-import collections
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property, reduce
-from typing import Any, Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, Tuple, override
+from typing import Any, Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
 
 __all__ = [
-    'Cost', 'Value', 'Width', 'Atom', 'SpanAtom', 'Node',
+    'Cost', 'Width', 'Atom', 'SpanAtom', 'Node',
 ]
 
-Cost = float
+from grqe.type_definitions import ResultSet
 
-Value = collections.abc.Set[Tuple[int, int]]
+type Cost = float
 
 
 @dataclass(frozen=True, order=True)
@@ -92,7 +91,7 @@ class Node(ABC):
 
     # Mark all the instance fields for proper behavior.
     cost: Cost = __inherited_to_subclasses
-    value: Optional[Value] = __inherited_to_subclasses
+    value: Optional[ResultSet] = __inherited_to_subclasses
     _profiling_info: Optional[dict[str, Any]] = __inherited_to_subclasses
     _refcount: int = __inherited_to_subclasses
 
@@ -147,7 +146,7 @@ class Node(ABC):
     def is_evaluated(self) -> bool:
         return self.value is not None
 
-    def deref_value(self, does_mutate: bool = True) -> Value:
+    def deref_value(self, does_mutate: bool = True) -> ResultSet:
         self._refcount -= 1
         if self._refcount and does_mutate:
             return self.value.copy()

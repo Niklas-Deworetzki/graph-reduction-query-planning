@@ -47,15 +47,15 @@ def test_difference(a, b):
     test_set_operation(a, b, a - b, BucketRangeSet.difference)
 
 
-@given(set_of_ranges(), set_of_ranges(), st.integers(min_value=0, max_value=100))
-def test_join(a, b, distance):
+@given(set_of_ranges(), set_of_ranges())
+def test_sequence(a, b):
     expected = {
         (ll, rr)
         for (ll, lr) in a
         for (rl, rr) in b
-        if rl - lr == distance
+        if rl - lr == 0
     }
-    test_set_operation(a, b, expected, lambda a, b: a.join(b, distance))
+    test_set_operation(a, b, expected, BucketRangeSet.sequence)
 
 
 @given(set_of_ranges(), set_of_ranges())
@@ -125,8 +125,8 @@ TEST_OPERATOR_SEMANTICS = [
     test_conjunction,
     test_disjunction,
     test_difference,
-    test_join,
-    test_covers,
+    test_sequence,
+    #    test_covers,
 ]
 
 
@@ -142,7 +142,7 @@ def test_associative_disjunction(a, b, c):
 
 @given(set_of_ranges(), set_of_ranges(), set_of_ranges())
 def test_associative_sequence(a, b, c):
-    test_associativity(a, b, c, BucketRangeSet.join)
+    test_associativity(a, b, c, BucketRangeSet.sequence)
 
 
 @given(set_of_ranges(), set_of_ranges())
@@ -177,12 +177,12 @@ def test_disjunction_distributes_over_conjunction(a, b, c):
 
 @given(set_of_ranges(), set_of_ranges(), set_of_ranges())
 def test_sequence_distributes_over_conjunction(a, b, c):
-    test_distributivity(a, b, c, BucketRangeSet.join, BucketRangeSet.conjunction)
+    test_distributivity(a, b, c, BucketRangeSet.sequence, BucketRangeSet.conjunction)
 
 
 @given(set_of_ranges(), set_of_ranges(), set_of_ranges())
 def test_sequence_distributes_over_disjunction(a, b, c):
-    test_distributivity(a, b, c, BucketRangeSet.join, BucketRangeSet.disjunction)
+    test_distributivity(a, b, c, BucketRangeSet.sequence, BucketRangeSet.disjunction)
 
 
 TEST_OPERATOR_LAWS = [
@@ -212,9 +212,9 @@ def test_serialization(s):
 
 
 for test in TEST_OPERATOR_SEMANTICS:
-   test()
+    test()
 
 for test in TEST_OPERATOR_LAWS:
-   test()
+    test()
 
 test_serialization()

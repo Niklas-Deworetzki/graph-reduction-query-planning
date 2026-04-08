@@ -1,62 +1,80 @@
-import collections
 import heapq
 import struct
 from collections import defaultdict
-from io import BytesIO
-from typing import Dict, Iterable, Iterator, Tuple
+from functools import reduce
+from typing import BinaryIO, Dict, Iterable, Iterator, override
 
 from pyroaring import BitMap
 
 from grqe.profiling import profile
-
-type Range = Tuple[int, int]
-
-type RangeSet = collections.abc.Set[Range]
+from grqe.type_definitions import Range, ResultSet
 
 
-class BucketRangeSet(collections.abc.Set[Range]):
+class BucketRangeSet(ResultSet):
     buckets: Dict[int, BitMap]
 
-    @staticmethod
-    def of(s: set[Range]) -> 'BucketRangeSet':
+    @override
+    @classmethod
+    def of(cls, s: Iterable[Range]) -> 'BucketRangeSet':
         data = defaultdict(BitMap)
         for (x, y) in s:
             data[y - x].add(x)
         return BucketRangeSet(data)
 
-    @staticmethod
-    def empty() -> 'BucketRangeSet':
+    @override
+    @classmethod
+    def empty(cls) -> 'BucketRangeSet':
         return BucketRangeSet({})
 
     def __init__(self, buckets: Dict[int, BitMap]):
         self.buckets = buckets
 
-    def copy(self) -> 'BucketRangeSet':
-        buckets = {key: BitMap(value) for key, value in self.buckets.items()}
-        return BucketRangeSet(buckets)
-
-    def conjunction(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        common_keys = self.buckets.keys() & other.buckets.keys()
+    @override
+    @classmethod
+    def conjunction(cls, *sets: 'BucketRangeSet') -> 'BucketRangeSet':
+        common_keys = reduce(lambda a, b: a & b, (s.buckets.keys() for s in sets))
         buckets = {
-            key: self.buckets[key] & other.buckets[key]
+            key: reduce(BitMap.__and__, (s.buckets[key] for s in sets))
             for key in common_keys
         }
         return BucketRangeSet(buckets)
 
-    def disjunction(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        common_keys = self.buckets.keys() & other.buckets.keys()
-        buckets = {
-            key: self.buckets[key] | other.buckets[key]
-            for key in common_keys
-        }
-
-        # Just copy the reference for all non-shared keys.
-        for key in (self.buckets.keys() - common_keys):
-            buckets[key] = self.buckets[key]
-        for key in (other.buckets.keys() - common_keys):
-            buckets[key] = other.buckets[key]
+    @override
+    @classmethod
+    def disjunction(cls, *sets: 'BucketRangeSet') -> 'BucketRangeSet':
+        buckets = {}
+        for s in sets:
+            for width, bucket in s.buckets.items():
+                if width not in buckets:
+                    buckets[width] = bucket
+                else:
+                    buckets[width] = buckets[width] | bucket
         return BucketRangeSet(buckets)
 
+    def _join(self, other: 'BucketRangeSet', distance: int = 0) -> 'BucketRangeSet':
+        buckets: Dict[int, BitMap] = {}
+        for self_length, self_value in self.buckets.items():
+            offset = self_length + distance
+            expected_endpoints = self_value.shift(offset)
+
+            for other_length, other_value in other.buckets.items():
+                joined_length = self_length + other_length + distance
+
+                joined = expected_endpoints & other_value
+                joined = joined.shift(-offset)
+
+                if joined_length not in buckets:
+                    buckets[joined_length] = joined
+                else:
+                    buckets[joined_length] |= joined
+        return BucketRangeSet(buckets)
+
+    @override
+    @classmethod
+    def sequence(cls, *sets: 'ResultSet') -> 'ResultSet':
+        return reduce(cls._join, sets)
+
+    @override
     def difference(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
         common_keys = self.buckets.keys() & other.buckets.keys()
         buckets = {
@@ -80,6 +98,7 @@ class BucketRangeSet(collections.abc.Set[Range]):
                 endpoints.add(endpoint)
         return covered, endpoints
 
+    @override
     def covered_by(self, container: 'BucketRangeSet') -> 'BucketRangeSet':
         # This implementation assumes that regions in the container are non-overlapping.
         # We then build a mask of all the possible positions in which a length-n match can start
@@ -115,44 +134,10 @@ class BucketRangeSet(collections.abc.Set[Range]):
             result[self_size] = self_startpoints & mask
         return BucketRangeSet(result)
 
-    def join(self, other: 'BucketRangeSet', distance: int = 0) -> 'BucketRangeSet':
-        buckets: Dict[int, BitMap] = {}
-        for self_length, self_value in self.buckets.items():
-            offset = self_length + distance
-            expected_endpoints = self_value.shift(offset)
+    def __len__(self) -> int:
+        return sum(len(bucket) for bucket in self.buckets.values())
 
-            for other_length, other_value in other.buckets.items():
-                joined_length = self_length + other_length + distance
-
-                joined = expected_endpoints & other_value
-                joined = joined.shift(-offset)
-
-                if joined_length not in buckets:
-                    buckets[joined_length] = joined
-                else:
-                    buckets[joined_length] |= joined
-        return BucketRangeSet(buckets)
-
-    def extend(self, l_off: int, r_off: int) -> 'BucketRangeSet':
-        length_increase = r_off - l_off
-        buckets = {
-            key + length_increase: value.shift(l_off)
-            for key, value in self.buckets.items()
-        }
-        return BucketRangeSet(buckets)
-
-    def __and__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        return self.conjunction(other)
-
-    def __or__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        return self.disjunction(other)
-
-    def __sub__(self, other: 'BucketRangeSet') -> 'BucketRangeSet':
-        return self.difference(other)
-
-    def __len__(self):
-        return sum(len(bm) for bm in self.buckets.values())
-
+    @override
     def __contains__(self, x: Range) -> bool:
         (l, r) = x
         length = r - l
@@ -162,6 +147,7 @@ class BucketRangeSet(collections.abc.Set[Range]):
     def _iterate_bucket(length, bucket) -> Iterable[Range]:
         return ((start, start + length) for start in bucket)
 
+    @override
     def __iter__(self) -> Iterator[Range]:
         iterators = (
             BucketRangeSet._iterate_bucket(length, bucket)
@@ -169,7 +155,8 @@ class BucketRangeSet(collections.abc.Set[Range]):
         )
         yield from heapq.merge(*iterators)
 
-    def serialize(self, f):
+    @override
+    def serialize(self, f: BinaryIO) -> None:
         f.write(struct.pack('<I', len(self.buckets)))
 
         for size, bucket in self.buckets.items():
@@ -177,8 +164,9 @@ class BucketRangeSet(collections.abc.Set[Range]):
             f.write(struct.pack('<II', size, len(data)))
             f.write(data)
 
+    @override
     @classmethod
-    def deserialize(cls, f):
+    def deserialize(cls, f: BinaryIO) -> 'BucketRangeSet':
         bucket_count, = struct.unpack('<I', f.read(4))
         buckets = {}
 
@@ -187,9 +175,4 @@ class BucketRangeSet(collections.abc.Set[Range]):
             payload = f.read(payload_size)
             buckets[size] = BitMap.deserialize(payload)
 
-        return cls(buckets)
-
-    def bytesize(self) -> int:
-        with BytesIO() as io:
-            self.serialize(io)
-            return io.tell()
+        return BucketRangeSet(buckets)
