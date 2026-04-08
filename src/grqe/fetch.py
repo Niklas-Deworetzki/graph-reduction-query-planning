@@ -3,14 +3,15 @@ from functools import reduce
 from typing import Iterable, Optional, Protocol, Tuple
 
 import networkx as nx
+from cachetools import LRUCache
 from pyroaring import BitMap
 
 from grqe.corpus import AnnotationsDir, Corpus, IntArray, BinaryIndex, SpanDir, UnaryIndex
 from grqe.profiling import profile
 from grqe.debug import LOGGER
 from grqe.query import Lookup, SpanLookup
-from grqe.sets import Range
-from grqe.type_definitions import Feature, Symbol
+from grqe.sets import BucketRangeSet, Range
+from grqe.type_definitions import Feature, ResultSet, Symbol
 
 
 class LookupStrategy(Protocol):
@@ -18,7 +19,7 @@ class LookupStrategy(Protocol):
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
         ...
 
-    def lookup_span(self, lookup: SpanLookup) -> Iterable[Range]:
+    def lookup_span(self, lookup: SpanLookup) -> ResultSet:
         ...
 
     @staticmethod
@@ -58,6 +59,10 @@ class GraphBasedIndexLookup:
     binary_indexes: dict[tuple[str, int, str], BinaryIndex] = dict()
     features: dict[str, AnnotationsDir]
 
+    cached_full_spans: dict[str, ResultSet]
+    cached_span_lookups: LRUCache
+    cached_token_lookups: LRUCache
+
     def __init__(self, corpus: Corpus):
         self.corpus = corpus
         self.features = corpus.tokens()
@@ -69,6 +74,10 @@ class GraphBasedIndexLookup:
             (key.feature1, key.distance, key.feature2): value
             for key, value in corpus.binary_indexes().items()
         }
+
+        self.cached_full_spans = {}
+        self.cached_span_lookups = LRUCache(maxsize=5)
+        self.cached_token_lookups = LRUCache(maxsize=15)
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
             LOGGER.warning(f'No index for feature {unresolved_feature}. Searching will be slow.')
@@ -95,7 +104,22 @@ class GraphBasedIndexLookup:
         if attributes is None:
             return []
         elif len(attributes) == 0:
-            return span.ranges
+            if lookup.span in self.cached_full_spans:
+                with profile('span.from_full_cache'):
+                    return self.cached_full_spans[lookup.span]
+
+            with profile('span.io'):
+                materialized_result = list(span.ranges)
+            with profile('span.to_bitmap'):
+                result = BucketRangeSet.of(materialized_result)
+
+            self.cached_full_spans[lookup.span] = result
+            return result
+
+        cache_key = (lookup.span, attributes)
+        if cache_key in self.cached_span_lookups:
+            with profile('span.from_lookup_cache'):
+                return self.cached_span_lookups[cache_key]
 
         with profile('span.search'):
             matching_span_ids = []
@@ -107,7 +131,12 @@ class GraphBasedIndexLookup:
                 matching_span_ids.append(span_ids)
 
             span_ids = conjunct_bitmaps(matching_span_ids)
-            return (span.ranges[i] for i in span_ids)
+            materialized_result = list(span.ranges[i] for i in span_ids)
+        with profile('span.to_bitmap'):
+            result = BucketRangeSet.of(materialized_result)
+
+        self.cached_span_lookups[cache_key] = result
+        return result
 
     def _prefetch(self, attributes: Iterable[Attribute]) -> dict[Edge, BitMap]:
         prefetched = dict()
@@ -135,7 +164,7 @@ class GraphBasedIndexLookup:
         LOGGER.debug(f'Fetched data from {len(prefetched)} indexes.')
         return prefetched
 
-    def _prepare_attributes(self, lookup: Lookup, offset: int) -> Optional[list[Attribute]]:
+    def _prepare_attributes(self, lookup: Lookup, offset: int) -> Optional[tuple[Attribute, ...]]:
         attributes: list[Attribute] = []
         for atom in lookup.atoms:
             annotations = self.features.get(atom.key)
@@ -147,13 +176,17 @@ class GraphBasedIndexLookup:
                 return None
 
             attributes.append(Attribute(atom.key, atom.relative_position - offset, symbol))
-        return attributes
+        return tuple(attributes)
 
     def perform_lookup(self, lookup: Lookup, offset: int = 0) -> BitMap:
         # Precompute attributes
-        attributes: list[Attribute] = self._prepare_attributes(lookup, offset)
+        attributes = self._prepare_attributes(lookup, offset)
         if attributes is None:
             return BitMap()
+
+        if attributes in self.cached_token_lookups:
+            with profile('leaf.from_lookup_cache'):
+                return self.cached_token_lookups[attributes]
 
         # Prefetch index lookups
         with profile('leaf.prefetch'):
@@ -177,8 +210,10 @@ class GraphBasedIndexLookup:
                     a_l, a_r = a_r, a_l
 
                 index_lookups.append(prefetched[a_l, a_r])
+            result = conjunct_bitmaps(index_lookups)
 
-            return conjunct_bitmaps(index_lookups)
+        self.cached_token_lookups[attributes] = result
+        return result
 
 
 def conjunct_bitmaps(conjuncts: list[BitMap]) -> BitMap:

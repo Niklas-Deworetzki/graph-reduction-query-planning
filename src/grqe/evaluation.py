@@ -96,14 +96,7 @@ class FullEvaluator:
 
             case SpanLookup():
                 start_time = current_time()
-
-                res = defaultdict(BitMap)
-                with profile('span.io'):
-                    ranges = list(self.lookup_strategy.lookup_span(node))
-                with profile('span.to_bitmap'):
-                    for start, end in ranges:
-                        res[end - start].add(start)
-                node.value = BucketRangeSet(res)
+                node.value = self.lookup_strategy.lookup_span(node)
 
             case _:
                 raise NotImplementedError()
