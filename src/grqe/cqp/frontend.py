@@ -17,10 +17,11 @@ GRAMMAR = """
 
     attributes: (attribute ("," attribute)*) ?
 
-    attribute: KEY "=" VALUE
+    attribute: KEY ATTRIBUTE_OPERATOR VALUE
 
     BINARY_OPERATOR: "|" | "&"
-    SUFFIX_OPERATOR: "+" | "*" | "?"    
+    SUFFIX_OPERATOR: "+" | "*" | "?"
+    ATTRIBUTE_OPERATOR: "=" | "!="
 
     KEY:        LETTER (LETTER | DIGIT)*
     %import common.ESCAPED_STRING -> VALUE
@@ -67,25 +68,56 @@ def convert(query: Parsed) -> Node:
 
         case 'token':
             attributes = query.children[0].children
-            if len(attributes) == 0:
-                return Arbitrary()
 
-            atoms = map(to_atom, attributes)
-            return Lookup(tuple(atoms))
+            positive_atoms = []
+            negative_atoms = []
+            for is_positive, atom in map(to_atom, attributes):
+                if is_positive:
+                    positive_atoms.append(atom)
+                else:
+                    negative_atoms.append(atom)
+
+            if positive_atoms:
+                positive = Lookup(tuple(positive_atoms))
+            else:
+                positive = Arbitrary()
+
+            if negative_atoms:
+                negative = Lookup(tuple(negative_atoms))
+                return Subtraction(positive, negative)
+            else:
+                return positive
 
         case _:
             singleton = query.children[0]
             return convert(singleton)
 
 
-def to_atom(attribute: Parsed) -> Atom:
-    key, value = attribute.children
-    return Atom(0, key, value[1:-1])
+def to_atom(attribute: Parsed) -> tuple[bool, Atom]:
+    key, op, value = attribute.children
+    return op == '=', Atom(0, key, value[1:-1])
 
 
-def to_span_atom(attribute: Parsed) -> SpanAtom:
-    key, value = attribute.children
-    return SpanAtom(key, value[1:-1])
+def to_span_atom(attribute: Parsed) -> tuple[bool, SpanAtom]:
+    key, op, value = attribute.children
+    return op == '=', SpanAtom(key, value[1:-1])
+
+
+def to_span_query(span: str, metadata: Iterable[Parsed]) -> SpanLookup:
+    positive_atoms = []
+    negative_atoms = []
+    for is_positive, atom in map(to_span_atom, metadata):
+        if is_positive:
+            positive_atoms.append(atom)
+        else:
+            negative_atoms.append(atom)
+
+    positive = SpanLookup(span, positive_atoms)
+    if negative_atoms:
+        negative = SpanLookup(span, negative_atoms)
+        return Subtraction(positive, negative)
+    else:
+        return positive
 
 
 def parse(s: str) -> Node:
@@ -96,11 +128,7 @@ def parse(s: str) -> Node:
         query = convert(unparsed_query)
         if len(tree.children) > 1:
             span, *metadata = tree.children[1].children
-
-            span_query = SpanLookup(
-                span,
-                map(to_span_atom, metadata)
-            )
+            span_query = to_span_query(span, metadata)
             query = Contained(
                 query,
                 span_query,
