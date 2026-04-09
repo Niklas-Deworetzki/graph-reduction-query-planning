@@ -45,7 +45,8 @@ class FullEvaluator:
                 start_time = current_time()
 
                 operation = self.set_operations[type(node)]
-                res = operation(el.value for el in node.elements)
+                args = (el.value for el in node.elements)
+                res = operation(*args)
                 node.value = res
 
             case Arbitrary():
