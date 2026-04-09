@@ -45,7 +45,7 @@ def main():
 
                 with profile('results.display'):
                     print(len(result))
-                    show_n_results(corpus, result, 4)
+                    show_n_results(corpus, result, EXAMPLE_RESULTS)
 
                 trace = extract_profiling_trace(reduced, query)
                 json.dump(trace, trace_file, indent=None)
@@ -53,11 +53,13 @@ def main():
 
 
 INTERESTING_FEATURES = ['form', 'upos']
+CONTEXT_SIZE = 0
+EXAMPLE_RESULTS = 10
 
 
 def show_n_results(corpus: Corpus, results: AbstractSet[tuple[int, int]], limit: int):
     for (b, e), _ in zip(results, range(limit)):
-        decoded_features = corpus.decode(range(max(0, b - 3), min(e + 3, len(corpus) - 1)), INTERESTING_FEATURES)
+        decoded_features = corpus.decode(range(max(0, b - CONTEXT_SIZE), min(e + CONTEXT_SIZE, len(corpus) - 1)), INTERESTING_FEATURES)
         tracks = [[f.decode() for f in decoded_features[feature]] for feature in INTERESTING_FEATURES]
         widths = [max(len(v) for v in values_at_position) for values_at_position in zip(*tracks)]
 
