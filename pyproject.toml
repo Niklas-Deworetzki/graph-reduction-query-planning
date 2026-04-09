@@ -11,7 +11,6 @@ dependencies = [
     'graphviz==0.21',
 
     'cachetools==7.0.5',
-    'diskcache==5.6.3',
 
     'Flask==3.1.3',
 ]
