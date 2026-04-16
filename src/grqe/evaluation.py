@@ -108,6 +108,7 @@ class FullEvaluator:
             size=str(len(node.value)),
             serialized_bytes=format_bytesize(node.value.bytesize()),
             no_buckets=str(len(node.value.buckets)),
+            corpus=self.corpus.name,
         )
 
     def eval_fully(self, node: Node) -> ResultSet:
