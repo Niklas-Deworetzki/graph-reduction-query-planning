@@ -67,15 +67,17 @@ class Atom:
     relative_position: int
     key: str
     value: str
+    is_regex: bool
 
     def shift(self, offset: int) -> Atom:
-        return Atom(self.relative_position + offset, self.key, self.value)
+        return Atom(self.relative_position + offset, self.key, self.value, self.is_regex)
 
 
 @dataclass(frozen=True, order=True)
 class SpanAtom:
     key: str
     value: str
+    is_regex: bool
 
 
 class Node(ABC):

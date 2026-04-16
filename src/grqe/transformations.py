@@ -207,13 +207,13 @@ def unfuse_leaves(root: Node) -> Node:
         # Collect key-value-pairs at offset.
         leaves: dict[int, set] = defaultdict(set)
         for atom in root.atoms:
-            leaves[atom.relative_position].add((atom.key, atom.value))
+            leaves[atom.relative_position].add((atom.key, atom.value, atom.is_regex))
 
         # Make sequence of sufficient width using arbitrary tokens.
         # Sequence elements will be replaced with appropriate lookup.
         sequence: list[Node] = [Arbitrary()] * (max(leaves.keys()) + 1)
         for offset, entries in leaves.items():
-            atoms = (Atom(0, key, value) for key, value in entries)
+            atoms = (Atom(0, key, value, is_regex) for key, value, is_regex in entries)
             sequence[offset] = Lookup(tuple(atoms))
         if len(sequence) == 1:
             return sequence[0]
