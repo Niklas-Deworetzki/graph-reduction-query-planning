@@ -49,10 +49,10 @@ class ResultSet(ABC, collections.abc.Set[Range]):
         ...
 
     def __and__(self, other: 'ResultSet') -> 'ResultSet':
-        return self.conjunction(self, other)
+        return type(self).conjunction(self, other)
 
     def __or__(self, other: 'ResultSet') -> 'ResultSet':
-        return self.disjunction(self, other)
+        return type(self).disjunction(self, other)
 
     def __sub__(self, other: 'ResultSet') -> 'ResultSet':
         return self.difference(other)
