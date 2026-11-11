@@ -92,15 +92,27 @@ def convert(query: Parsed) -> Node:
             singleton = query.children[0]
             return convert(singleton)
 
+def regex_is_literal(regex: Pattern) -> bool:
+    try:
+        return regex.cardinality() == 1
+    except OverflowError:
+        return False
+
+def from_literal(value: str) -> tuple[str, bool]:
+    value = value[1:-1]
+    parsed = re_parse(value)
+    return str(parsed), not regex_is_literal(parsed)
 
 def to_atom(attribute: Parsed) -> tuple[bool, Atom]:
-    key, op, value = attribute.children
-    return op == '=', Atom(0, key, value[1:-1])
+    key, op, literal = attribute.children
+    value, is_regex = from_literal(literal)
+    return op == '=', Atom(0, key, value, is_regex)
 
 
 def to_span_atom(attribute: Parsed) -> tuple[bool, SpanAtom]:
-    key, op, value = attribute.children
-    return op == '=', SpanAtom(key, value[1:-1])
+    key, op, literal = attribute.children
+    value, is_regex = from_literal(literal)
+    return op == '=', SpanAtom(key, value, is_regex)
 
 
 def to_span_query(span: str, metadata: Iterable[Parsed]) -> SpanLookup:
