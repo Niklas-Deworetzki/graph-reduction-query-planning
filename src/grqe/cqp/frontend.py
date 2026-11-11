@@ -1,5 +1,6 @@
 from lark import Lark, Token, Tree
 from lark.exceptions import LarkError
+from greenery import parse as re_parse, Pattern
 
 from grqe.query import *
 
@@ -8,8 +9,7 @@ GRAMMAR = """
     
     within: "within" KEY ("where" attribute ("," attribute)*)?
     
-    bin:    seq BINARY_OPERATOR seq             -> binary
-       |    seq
+    bin:    seq (BINARY_OPERATOR seq)*          -> binary
     seq:    pat+                                -> sequence
     pat:    tok SUFFIX_OPERATOR?                -> pattern
     tok: "[" attributes "]"                     -> token
@@ -46,10 +46,16 @@ _BINARY_CONSTRUCTORS = {
 def convert(query: Parsed) -> Node:
     match query.data:
         case 'binary':
-            lhs, op, rhs = query.children
+            lhs, *tail = query.children
 
-            operands = [convert(lhs), convert(rhs)]
-            return _BINARY_CONSTRUCTORS[op](operands)
+            result = convert(lhs)
+            while tail:
+                op, rhs, *tail = tail
+
+                args: list[Node] = [result, convert(rhs)]
+                result = _BINARY_CONSTRUCTORS[op](args)
+
+            return result
 
         case 'sequence':
             translated: list[Node] = []
