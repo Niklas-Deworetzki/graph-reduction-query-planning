@@ -5,12 +5,10 @@ from functools import cached_property, reduce
 from typing import Any, Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
 
 __all__ = [
-    'Cost', 'Width', 'Atom', 'SpanAtom', 'Node',
+    'Width', 'Atom', 'SpanAtom', 'Node',
 ]
 
-from grqe.type_definitions import ResultSet
-
-type Cost = float
+from grqe.type_definitions import ResultSet, Cost
 
 
 @dataclass(frozen=True, order=True)

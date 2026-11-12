@@ -12,6 +12,8 @@ type Symbol = int
 
 type Range = Tuple[int, int]
 
+type Cost = float
+
 
 class ResultSet(ABC, collections.abc.Set[Range]):
 
