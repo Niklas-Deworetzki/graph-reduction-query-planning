@@ -27,13 +27,11 @@ class Frequencies:
     path: Path
     frequencies: IntArray
 
-    FREQUENCIES_FILENAME: ClassVar[str] = 'frequencies'
-
     def __init__(self, path: Path) -> None:
         self.path = path
 
         try:
-            self.frequencies = IntArray(self.path / Frequencies.FREQUENCIES_FILENAME)
+            self.frequencies = IntArray(self.path)
         except FileNotFoundError:
             raise FileNotFoundError(f'Frequencies file does not exist: {self.path}')
 
