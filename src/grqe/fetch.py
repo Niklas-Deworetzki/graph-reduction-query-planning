@@ -434,6 +434,7 @@ class GraphBasedIndexLookup:
         if index_lookups:
             result = conjunct_bitmaps(index_lookups)
         else:
+            # If no preliminary result was found from attributes alone, use first regex to find preliminary result.
             first_regex, *regexes = regexes
             with profile(f'regex.instantiate.{first_regex}'):
                 result = first_regex.instantiate()
@@ -449,7 +450,7 @@ class GraphBasedIndexLookup:
 
 def conjunct_bitmaps(conjuncts: Iterable[BitMap]) -> BitMap:
     sorted(conjuncts, key=len)  # Start with smallest to reduce execution time.
-    return reduce(lambda a, b: a & b, conjuncts)
+    return reduce(BitMap.__and__, conjuncts)
 
 def regex_to_pattern(regex: str) -> re.Pattern:
     return re.compile(regex.encode())
