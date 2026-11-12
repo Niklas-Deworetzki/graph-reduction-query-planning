@@ -1,7 +1,6 @@
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
 
 from grqe.corpus.corpus import AnnotationsDir, CorpusDir
 from grqe.corpus.parser import CorpusHandler, VrtParser
@@ -82,7 +81,7 @@ def encode_corpus(
         corpus: CorpusDir,
         columns: list[str],
         spans: dict[str, set[str]],
-        sources: Iterable[Path]
+        sources: list[Path]
 ):
     print('Preparing files...', file=sys.stderr)
     parser = VrtParser(columns, spans, sources)

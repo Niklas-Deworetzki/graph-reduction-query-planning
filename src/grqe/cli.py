@@ -31,6 +31,14 @@ def run_encode(corpus_dir: Path, corpus_name: str, args: argparse.Namespace) -> 
         warn('Try using  --  to separate input files from spans.')
         return False
 
+    if not files:
+        warn('No files specified to encode.')
+        return False
+
+    if not columns:
+        warn('No columns given to encode. Refusing to create empty corpus.')
+        return False
+
     corpus = Corpus(corpus_name, corpus_dir)
     encode_corpus(
         corpus.base,
@@ -107,7 +115,8 @@ class IndexesToBuild:
 
             distances = range(distance + 1)
             for feature1, distance, feature2 in product(features, distances, features):
-                self.binary.add(BinarySignature(feature1, distance, feature2))
+                if not (feature1 == feature2 and distance == 0):
+                    self.binary.add(BinarySignature(feature1, distance, feature2))
 
     def _collect_span_indexes(self, args: argparse.Namespace, corpus: Corpus):
         for span, *features in args.span:
