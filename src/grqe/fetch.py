@@ -1,5 +1,6 @@
 import re
 from abc import ABC, abstractmethod
+from bisect import bisect
 from dataclasses import dataclass, field
 from functools import reduce
 from typing import Iterable, Optional, Protocol, Tuple, override
@@ -300,6 +301,19 @@ def linear_search(data: IntArray, symbol: Symbol, offset: int = 0) -> BitMap:
 
 
 def iterate_matching_symbols(feature: AnnotationsDir, pattern: re.Pattern) -> Iterable[Symbol]:
+    # Prepare pattern by placing NUL bytes around and replacing matchall character with non-NUL
+    regex = pattern.pattern.replace(b'.', b'[^\x00]')
+    regex = b'\x00' + regex + b'(?=\x00)'
+    pattern = re.compile(regex)
+
+    symboltable = feature.symbols._bytesarray._rawdata
+    starts = feature.symbols._bytesarray._starts
+
+    for match in pattern.finditer(symboltable):
+        # +1 because the NUL byte is matched by regex
+        # -1 because bisect returns position AFTER match
+        yield bisect(starts, match.start() + 1) - 1
+
 
 #########################################################################
 # Prefetch - incomplete index lookups for optimal index resolution
