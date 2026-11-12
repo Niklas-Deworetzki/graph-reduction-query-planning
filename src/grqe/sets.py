@@ -107,7 +107,7 @@ class BucketRangeSet(ResultSet):
         #  shift and & to quickly compute a mask for n + 1 length matches; iterating all
         #  match lengths from smallest to biggest.
 
-        if not self.buckets:
+        if not self:
             return BucketRangeSet.empty()
 
         result = {}
@@ -136,6 +136,9 @@ class BucketRangeSet(ResultSet):
 
     def __len__(self) -> int:
         return sum(len(bucket) for bucket in self.buckets.values())
+
+    def __bool__(self):
+        return any(bucket for bucket in self.buckets.values())
 
     @override
     def __contains__(self, x: Range) -> bool:
