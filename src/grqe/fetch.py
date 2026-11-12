@@ -205,7 +205,7 @@ class Prefetch(ABC):
         return len(self.values)
 
 
-@dataclass(frozen=True)
+@dataclass
 class BinaryPrefetch(Prefetch):
     a_l: Attribute
     a_r: Attribute
@@ -215,7 +215,7 @@ class BinaryPrefetch(Prefetch):
         return self.resolved_index.search(self.a_l.value, self.a_r.value, self.a_l.offset)
 
 
-@dataclass(frozen=True)
+@dataclass
 class UnaryPrefetch(Prefetch):
     attribute: Attribute
     resolved_index: UnaryIndex
@@ -224,7 +224,7 @@ class UnaryPrefetch(Prefetch):
         return self.resolved_index.search(self.attribute.value, self.attribute.offset)
 
 
-@dataclass(frozen=True)
+@dataclass
 class LinearScan(Prefetch):
     attribute: Attribute
     data: IntArray
