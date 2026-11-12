@@ -385,13 +385,13 @@ class GraphBasedIndexLookup:
         self.cached_full_spans[name] = result
         return result
 
-    def lookup_span(self, lookup: SpanLookup) -> Iterable[Range]:
+    def lookup_span(self, lookup: SpanLookup) -> ResultSet:
         if not (span := self.corpus.spans().get(lookup.span)):
-            return []
+            return ResultSet.empty()
 
         goals = self._prepare_span_attributes(lookup, span)
         if goals is None:
-            return []
+            return ResultSet.empty()
 
         if len(goals) == 0:
             # If the whole span is requested, we look in a special cache.
