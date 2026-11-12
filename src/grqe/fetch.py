@@ -37,21 +37,52 @@ class Attribute:
     value: Symbol
 
 
+#########################################################################
+# Goals - Delayed actions for selecting spans or tokens with regexes.
+#########################################################################
+
 FILTER_FACTOR = 1.7
 
 
-class SpanGoal(ABC):
+class Goal(ABC):
+    """
+    Queried feature to be resolved.
+    Implements instantiate to turn queried feature into a BitMap of all positions.
+    Also implements filter to filter a set of positions against the feature.
+    """
     resolved_feature: AnnotationsDir
-
-    def has_index(self) -> bool:
-        return bool(self.resolved_feature.index)
 
     @abstractmethod
     def estimated_comparisons_for_instantiate(self) -> int:
         ...
 
+    def has_index(self) -> bool:
+        return bool(self.resolved_feature.index)
+
     def prefers_filter(self, size_to_filter: int) -> bool:
         return self.estimated_comparisons_for_instantiate() > (size_to_filter / FILTER_FACTOR)
+
+    @abstractmethod
+    def instantiate(self) -> BitMap:
+        ...
+
+    @abstractmethod
+    def filter(self, positions: BitMap) -> BitMap:
+        ...
+
+    def refine_result(self, preliminary_result: BitMap) -> BitMap:
+        if self.prefers_filter(len(preliminary_result)):
+            return self.filter(preliminary_result)
+        else:
+            return preliminary_result & self.instantiate()
+
+
+class SpanGoal(Goal):
+    """
+    For spans we provide two ways to instantiate them:
+    1. If there is an index available, scan the feature index for the requested value.
+    2. Otherwise, scan all spans for the requested value linearly.
+    """
 
     def instantiate(self) -> BitMap:
         if self.has_index():
@@ -67,13 +98,10 @@ class SpanGoal(ABC):
     def index_scan(self) -> BitMap:
         ...
 
-    @abstractmethod
-    def filter(self, positions: BitMap) -> BitMap:
-        ...
-
 
 @dataclass(frozen=True)
 class ValueSpanGoal(SpanGoal):
+    """Search for spans with key=value. Either directly via index, otherwise by linear scan."""
     resolved_feature: AnnotationsDir
     value: Symbol
 
@@ -106,6 +134,13 @@ class ValueSpanGoal(SpanGoal):
 
 @dataclass(frozen=True)
 class RegexSpanGoal(SpanGoal):
+    """
+    Search for spans with key=regex.
+
+    Unless filtering, always starts by finding all symbols matching regex.
+    Then either scan linearly through spans and keep where the symbol matches. Alternatively,
+    use index to find spans with matching symbols.
+    """
     resolved_feature: AnnotationsDir
     pattern: re.Pattern
 
@@ -144,52 +179,72 @@ class RegexSpanGoal(SpanGoal):
         return self.pattern.pattern.decode()
 
 
-type Edge = Tuple[Attribute, Attribute]
-type WeightedEdge = Tuple[Attribute, Attribute, int]
-
-
 @dataclass(frozen=True)
-class RegexTokenGoal:
+class RegexTokenGoal(Goal):
+    """
+    Search for tokens with key=regex at a given offset.
+
+    Instantiates by searching the symbol table and then either using an index or linear scan to
+    resolve matching positions.
+    """
     resolved_feature: AnnotationsDir
     offset: int
     pattern: re.Pattern
 
+    @override
+    def estimated_comparisons_for_instantiate(self) -> int:
+        if self.resolved_feature.index:
+            return len(self.resolved_feature.symbols) * 2
+        else:
+            return len(self.resolved_feature.symbols) + len(self.resolved_feature.values)
+
+    @override
     def instantiate(self) -> BitMap:
-        matching_positions = BitMap()
-        matching_symbols = iterate_matching_symbols(self.resolved_feature, self.pattern)
+        with profile(f'regex[{self}].table_scan'):
+            matching_positions = BitMap()
+            matching_symbols = iterate_matching_symbols(self.resolved_feature, self.pattern)
 
         if index := self.resolved_feature.index:
-            for symbol in matching_symbols:
-                matching_positions |= index.search(symbol)
+            with profile(f'regex[{self}].index_lookup'):
+                for symbol in matching_symbols:
+                    matching_positions |= index.search(symbol)
 
         else:
-            matching_symbols = BitMap(matching_symbols)
-            for position, symbol in enumerate(self.resolved_feature.values):
-                if symbol in matching_symbols:
-                    matching_positions.add(position)
+            with profile(f'regex[{self}].value_scan'):
+                matching_symbols = BitMap(matching_symbols)
+                for position, symbol in enumerate(self.resolved_feature.values):
+                    if symbol in matching_symbols:
+                        matching_positions.add(position)
 
         if self.offset:
             matching_positions.shift(-self.offset)
         return matching_positions
 
-
+    @override
     def filter(self, positions: BitMap) -> BitMap:
-        first_invalid_index = len(self.resolved_feature.values) - self.offset
-        for position in list(positions.iter_equal_or_larger(first_invalid_index)):
+        # Prune elements from the bitmap that can't exist because of corpus size and offset.
+        first_position_out_of_bounds = len(self.resolved_feature.values) - self.offset
+        for position in list(positions.iter_equal_or_larger(first_position_out_of_bounds)):
             positions.discard(position)
 
-        matching_positions = BitMap()
-        for position in positions:
-            symbol = self.resolved_feature.values[position + self.offset]
-            bytestr = self.resolved_feature.symbols.from_symbol(symbol)
+        with profile(f'regex[{self}].filter'):
+            # Linear scan through all provided positions.
+            matching_positions = BitMap()
+            for position in positions:
+                symbol = self.resolved_feature.values[position + self.offset]
+                bytestr = self.resolved_feature.symbols.from_symbol(symbol)
 
-            if self.pattern.fullmatch(bytestr):
-                matching_positions.add(position)
-        return matching_positions
+                if self.pattern.fullmatch(bytestr):
+                    matching_positions.add(position)
+            return matching_positions
 
     def __repr__(self):
         return self.pattern.pattern.decode()
 
+
+#########################################################################
+# Prefetch - incomplete index lookups for optimal index resolution
+#########################################################################
 
 class Prefetch(ABC):
     values: BitMap = field(init=False)
@@ -245,9 +300,13 @@ def linear_search(data: IntArray, symbol: Symbol, offset: int = 0) -> BitMap:
 
 
 def iterate_matching_symbols(feature: AnnotationsDir, pattern: re.Pattern) -> Iterable[Symbol]:
-    for symbol, bytestr in enumerate(feature.symbols):
-        if pattern.fullmatch(bytestr):
-            yield symbol
+
+#########################################################################
+# Prefetch - incomplete index lookups for optimal index resolution
+#########################################################################
+
+type Edge = Tuple[Attribute, Attribute]
+type WeightedEdge = Tuple[Attribute, Attribute, int]
 
 
 class GraphBasedIndexLookup:
@@ -321,6 +380,7 @@ class GraphBasedIndexLookup:
             return []
 
         if len(goals) == 0:
+            # If the whole span is requested, we look in a special cache.
             return self.span_from_cache(span, lookup.span)
 
         cache_key = lookup
@@ -333,10 +393,7 @@ class GraphBasedIndexLookup:
             span_ids = first_goal.instantiate()
             for goal in remaining_goals:
                 with profile(f'span.{goal}'):
-                    if goal.prefers_filter(len(span_ids)):
-                        span_ids = goal.filter(span_ids)
-                    else:
-                        span_ids &= goal.instantiate()
+                    span_ids = goal.refine_result(span_ids)
 
         with profile('span.materialize'):
             materialized_result = list(span.ranges[i] for i in span_ids)
@@ -441,8 +498,7 @@ class GraphBasedIndexLookup:
 
         with profile('regex.filter'):
             for regex in regexes:
-                with profile(f'regex.filter.{regex}'):
-                    result = regex.filter(result)
+                result = regex.refine_result(result)
 
         self.cached_token_lookups[cache_key] = result
         return result
@@ -451,6 +507,7 @@ class GraphBasedIndexLookup:
 def conjunct_bitmaps(conjuncts: Iterable[BitMap]) -> BitMap:
     sorted(conjuncts, key=len)  # Start with smallest to reduce execution time.
     return reduce(BitMap.__and__, conjuncts)
+
 
 def regex_to_pattern(regex: str) -> re.Pattern:
     return re.compile(regex.encode())
