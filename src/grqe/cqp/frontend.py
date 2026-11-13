@@ -1,7 +1,7 @@
 from lark import Lark, Token, Tree
 from lark.exceptions import LarkError
-from greenery import parse as re_parse, Pattern
 
+from grqe import regexes
 from grqe.query import *
 
 GRAMMAR = """
@@ -98,16 +98,9 @@ def convert(query: Parsed) -> Node:
             singleton = query.children[0]
             return convert(singleton)
 
-def regex_is_literal(regex: Pattern) -> bool:
-    try:
-        return regex.cardinality() == 1
-    except OverflowError:
-        return False
-
 def from_literal(value: str) -> tuple[str, bool]:
     value = value[1:-1]
-    parsed = re_parse(value)
-    return str(parsed), not regex_is_literal(parsed)
+    return str(value), not regexes.is_literal(value)
 
 def to_atom(attribute: Parsed) -> tuple[bool, Atom]:
     key, op, literal = attribute.children

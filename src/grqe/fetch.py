@@ -9,11 +9,12 @@ import networkx as nx
 from cachetools import LRUCache
 from pyroaring import BitMap
 
-from grqe.corpus import AnnotationsDir, Corpus, IntArray, BinaryIndex, SpanDir, UnaryIndex
-from grqe.profiling import profile
+from grqe import regexes
+from grqe.corpus import AnnotationsDir, BinaryIndex, Corpus, IntArray, SpanDir, UnaryIndex
 from grqe.debug import LOGGER
+from grqe.profiling import profile
 from grqe.query import Lookup, SpanLookup
-from grqe.sets import BucketRangeSet, Range
+from grqe.sets import BucketRangeSet
 from grqe.type_definitions import Feature, ResultSet, Symbol
 
 
@@ -302,9 +303,7 @@ def linear_search(data: IntArray, symbol: Symbol, offset: int = 0) -> BitMap:
 
 def iterate_matching_symbols(feature: AnnotationsDir, pattern: re.Pattern) -> Iterable[Symbol]:
     # Prepare pattern by placing NUL bytes around and replacing matchall character with non-NUL
-    regex = pattern.pattern.replace(b'.', b'[^\x00]')
-    regex = b'\x00' + regex + b'(?=\x00)'
-    pattern = re.compile(regex)
+    pattern = regexes.for_symboltable(pattern.pattern)
 
     symboltable = feature.symbols._bytesarray._rawdata
     starts = feature.symbols._bytesarray._starts
