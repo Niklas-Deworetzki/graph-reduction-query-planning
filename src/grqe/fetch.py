@@ -202,9 +202,9 @@ class RegexTokenGoal(Goal):
 
     @override
     def instantiate(self) -> BitMap:
+        matching_positions = BitMap()
         with profile(f'regex[{self}].table_scan'):
-            matching_positions = BitMap()
-            matching_symbols = iterate_matching_symbols(self.resolved_feature, self.pattern)
+            matching_symbols = list(iterate_matching_symbols(self.resolved_feature, self.pattern))
 
         if index := self.resolved_feature.index:
             with profile(f'regex[{self}].index_lookup'):
