@@ -71,7 +71,7 @@ class BucketRangeSet(ResultSet):
 
     @override
     @classmethod
-    def sequence(cls, *sets: 'ResultSet') -> 'ResultSet':
+    def sequence(cls, *sets: 'BucketRangeSet') -> 'BucketRangeSet':
         return reduce(cls._join, sets)
 
     @override
