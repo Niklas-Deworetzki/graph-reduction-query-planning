@@ -1,7 +1,7 @@
 import heapq
 import struct
 from collections import defaultdict
-from functools import reduce
+from functools import cached_property, reduce
 from typing import BinaryIO, Dict, Iterable, Iterator, override
 
 from pyroaring import BitMap
@@ -87,7 +87,8 @@ class BucketRangeSet(ResultSet):
             buckets[key] = self.buckets[key]
         return BucketRangeSet(buckets)
 
-    def _flatten(self) -> tuple[BitMap, BitMap]:
+    @cached_property
+    def _flattened(self) -> tuple[BitMap, BitMap]:
         covered = BitMap()
         endpoints = BitMap()
 
@@ -114,7 +115,7 @@ class BucketRangeSet(ResultSet):
 
         widths = sorted(self.buckets.keys())
         with profile('covered_by.mask'):
-            mask, endpoints = container._flatten()
+            mask, endpoints = container._flattened
 
         while widths[0] <= 1:
             width, *widths = widths
