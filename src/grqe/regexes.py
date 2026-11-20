@@ -22,7 +22,7 @@ def for_symboltable(regex: bytes) -> re.Pattern[bytes]:
     in an encoded symbol table.
     Symbols are separated by NUL-bytes. Therefore, the matchall character has
     to be replaced by a charclass matching everything but NUL. Further, we add
-    explicitl NUL characters as boundaries around the converted regex.
+    explicit NUL characters as boundaries around the converted regex.
     """
     pattern = greenery.parse(regex.decode())
 
