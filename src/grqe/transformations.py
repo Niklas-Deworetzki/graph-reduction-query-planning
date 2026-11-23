@@ -257,7 +257,7 @@ def fuse_leaves(root: Node) -> Node:
 
         # Find first and last Lookup node in sequence.
         # Everything before and after will just be concatenated to the fused sequence.
-        for unfusable_prefix in range(len(partition)):
+        for unfusable_prefix in range(len(partition)): # pylint:disable=consider-using-enumerate
             if isinstance(partition[unfusable_prefix], Lookup): break
         for unfusable_suffix in reversed(range(len(partition))):
             if isinstance(partition[unfusable_suffix], Lookup): break
