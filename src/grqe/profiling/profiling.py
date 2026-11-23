@@ -72,7 +72,7 @@ if PROFILING_ENABLED:
             return self
 
         @override
-        def __exit__(self, exc_type, exc_value, traceback, /):
+        def __exit__(self, exc_type, exc_value, traceback):
             self.time_taken = current_time() - self.time_taken
             ProfilingMeasurement.MEASUREMENTS_TAKEN.append(self)
 
@@ -102,7 +102,7 @@ else:
             return self
 
         @override
-        def __exit__(self, exc_type, exc_value, traceback, /):
+        def __exit__(self, exc_type, exc_value, traceback):
             pass
 
         def __setitem__(self, key: str, value: Any) -> None:
