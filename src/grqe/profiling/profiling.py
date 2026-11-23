@@ -2,7 +2,7 @@ import time
 from collections import defaultdict
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar
+from typing import Any, Callable, ClassVar, override
 
 from grqe.query import Lookup, Node, SpanLookup
 
@@ -66,10 +66,12 @@ if PROFILING_ENABLED:
 
         MEASUREMENTS_TAKEN: ClassVar[list[ProfilingMeasurement]] = []
 
+        @override
         def __enter__(self):
             self.time_taken = current_time()
             return self
 
+        @override
         def __exit__(self, exc_type, exc_value, traceback, /):
             self.time_taken = current_time() - self.time_taken
             ProfilingMeasurement.MEASUREMENTS_TAKEN.append(self)
@@ -95,9 +97,11 @@ else:
     class ProfilingMeasurement(AbstractContextManager):
         INSTANCE: ClassVar
 
+        @override
         def __enter__(self):
             return self
 
+        @override
         def __exit__(self, exc_type, exc_value, traceback, /):
             pass
 

@@ -60,7 +60,7 @@ class VrtParser:
 
         with file.open('r') as f:
             lines = progress(f, file.name, unit=' lines', unit_scale=True, total=line_count)
-            for lineno, content in enumerate(lines, start=1):
+            for content in lines:
                 if content.isspace():
                     continue
 

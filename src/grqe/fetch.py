@@ -311,6 +311,7 @@ def iterate_matching_symbols(feature: AnnotationsDir, pattern: re.Pattern) -> It
     for match in pattern.finditer(symboltable):
         # +1 because the NUL byte is matched by regex
         # -1 because bisect returns position AFTER match
+        # TODO: Use prior match as lower bound for bisect
         yield bisect(starts, match.start() + 1) - 1
 
 
@@ -325,7 +326,7 @@ type WeightedEdge = Tuple[Attribute, Attribute, int]
 class GraphBasedIndexLookup:
     corpus: Corpus
     unary_indexes: dict[str, UnaryIndex]
-    binary_indexes: dict[tuple[str, int, str], BinaryIndex] = dict()
+    binary_indexes: dict[tuple[str, int, str], BinaryIndex] = {}
     features: dict[str, AnnotationsDir]
 
     cached_full_spans: dict[str, ResultSet]
@@ -349,7 +350,7 @@ class GraphBasedIndexLookup:
         self.cached_token_lookups = LRUCache(maxsize=15)
 
         for unresolved_feature in set(corpus.features()) - self.unary_indexes.keys():
-            LOGGER.warning(f'No index for feature {unresolved_feature}. Searching will be slow.')
+            LOGGER.warning('No index for feature %s. Searching will be slow.', unresolved_feature)
 
     @staticmethod
     def _prepare_span_attributes(lookup: SpanLookup, span: SpanDir) -> Optional[list[SpanGoal]]:
@@ -417,7 +418,7 @@ class GraphBasedIndexLookup:
         return result
 
     def _prefetch(self, attributes: Iterable[Attribute]) -> dict[Edge, Prefetch]:
-        prefetched: dict[Edge, Prefetch] = dict()
+        prefetched: dict[Edge, Prefetch] = {}
 
         for a_l in attributes:
             for a_r in attributes:
@@ -437,7 +438,7 @@ class GraphBasedIndexLookup:
                 elif binary_index:
                     prefetched[a_l, a_r] = BinaryPrefetch(a_l, a_r, binary_index)
 
-        LOGGER.debug(f'Fetched data from {len(prefetched)} indexes.')
+        LOGGER.debug('Fetched data from %d indexes.', len(prefetched))
         return prefetched
 
     def _prepare_attributes(self, lookup: Lookup, offset: int) -> tuple[

@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, Generator, Iterable, Literal, Optional, Self, override
 
-from grqe.corpus import build_binary_index, build_unary_index
+from grqe.corpus.build_index import build_binary_index, build_unary_index
 from grqe.corpus.disk import IntArray, RangeArray, SparseRangeArray, SymbolCollection, TilingRangeArray
 from grqe.corpus.frequencies import Frequencies, build_frequency_file
 from grqe.corpus.index import BinaryIndex, Index, UnaryIndex

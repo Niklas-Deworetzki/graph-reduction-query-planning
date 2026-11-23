@@ -2,7 +2,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property, reduce
-from typing import Any, Callable, ClassVar, Generator, Iterable, Optional, Sequence as Seq, override
+from typing import Any, Callable, ClassVar, Collection, Generator, Iterable, Optional, Sequence as Seq, override
 
 __all__ = [
     'Width', 'Atom', 'SpanAtom', 'Node',
@@ -228,7 +228,7 @@ def node_type(*fields: str,
 
 @node_type()
 class Lookup(Node):
-    atoms: Iterable[Atom]
+    atoms: Collection[Atom]
 
     def __post_init__(self):
         super().__post_init__()

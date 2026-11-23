@@ -10,14 +10,14 @@ type Symbol = int
 
 
 def do_mmap(file: Path, itemsize: Optional[IntegerSize] = None) -> memoryview | mmap | bytearray:
-    with file.open('r+b') as file:
+    with file.open('r+b') as fp:
         try:
-            map = mmap(file.fileno(), 0)
+            mapped = mmap(fp.fileno(), 0)
         except ValueError:  # When file is empty.
-            map = bytearray(0)
+            mapped = bytearray(0)
     if itemsize is not None:
-        return memoryview(map).cast(get_typecode(itemsize))
-    return map
+        return memoryview(mapped).cast(get_typecode(itemsize))
+    return mapped
 
 
 class OnDisk(ABC):
@@ -36,13 +36,13 @@ class OnDisk(ABC):
 class Array[T]:
 
     def __iter__(self) -> Iterator[T]:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def __getitem__(self, index: int) -> T:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def __len__(self) -> int:
-        raise NotImplemented()
+        raise NotImplementedError()
 
 
 class IntArray(OnDisk, Array[int]):
@@ -56,6 +56,7 @@ class IntArray(OnDisk, Array[int]):
     _array: memoryview
 
     def __init__(self, path: Path):
+        # TODO: Replace with BitMap, maybe?
         with open(IntArray.getconfigpath(path)) as configfile:
             config = json.load(configfile)
         assert config['byteorder'] == sys.byteorder, f'Byte order "{config['byteorder']}" is not supported.'
@@ -368,6 +369,6 @@ class TilingRangeArray(RangeArray):
         starts = []
         for start, end in ranges:
             starts.append(start)
-        starts.append(end if starts else 0)
+        starts.append(end if starts else 0) # pylint: disable=undefined-loop-variable
 
         return IntArray.build(path, starts) - 1

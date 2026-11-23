@@ -261,7 +261,7 @@ def fuse_leaves(root: Node) -> Node:
             if isinstance(partition[unfusable_prefix], Lookup): break
         for unfusable_suffix in reversed(range(len(partition))):
             if isinstance(partition[unfusable_suffix], Lookup): break
-        unfusable_suffix += 1
+        unfusable_suffix += 1   # pylint: disable=undefined-loop-variable
 
         if unfusable_prefix >= unfusable_suffix:  # Entire partition is unfusable (doesn't contain Lookups).
             return Sequence(tuple(partition))

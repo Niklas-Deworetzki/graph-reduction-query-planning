@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
 from grqe.corpus.index import IntArray
 from grqe.type_definitions import Symbol
@@ -32,8 +32,8 @@ class Frequencies:
 
         try:
             self.frequencies = IntArray(self.path)
-        except FileNotFoundError:
-            raise FileNotFoundError(f'Frequencies file does not exist: {self.path}')
+        except FileNotFoundError as ex:
+            raise FileNotFoundError(f'Frequencies file does not exist: {self.path}') from ex
 
     def __enter__(self) -> Self:
         return self

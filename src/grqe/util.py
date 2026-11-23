@@ -35,10 +35,11 @@ def get_integer_size(max_value: int) -> IntegerSize:
     """The minimal n:o bytes needed to store values `0...max_value`"""
     itemsize = math.ceil(math.log(max_value + 1, 2) / 8)
     for i in sorted(TYPE_CODES.keys()):
+        i: IntegerSize
         if itemsize <= i:
             return i
-    else:
-        raise ValueError(f'Value {max_value} exceeds 64 bit limit.')
+
+    raise ValueError(f'Value {max_value} exceeds 64 bit limit.')
 
 
 def get_typecode(itemsize: IntegerSize) -> TypeFormat:
@@ -152,7 +153,7 @@ try:
     @contextmanager
     def progress_bar(maximum: int, description: str, **kwargs) -> Generator[Callable[[], None]]:
         pbar = tqdm.tqdm(total=maximum, desc=description, **kwargs)
-        yield lambda: pbar.update()
+        yield pbar.update
         pbar.close()
 
 

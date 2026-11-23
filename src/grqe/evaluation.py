@@ -1,13 +1,11 @@
-from functools import reduce
-from collections import defaultdict
 from typing import Protocol
 
 from pyroaring import BitMap
 
-from grqe.profiling import commit_profiling_data, profile, current_time
+from grqe.corpus import Corpus
 from grqe.debug import LOGGER
 from grqe.fetch import LookupStrategy
-from grqe.corpus import Corpus
+from grqe.profiling import commit_profiling_data, current_time
 from grqe.profiling.display import format_bytesize
 from grqe.query import *
 from grqe.sets import BucketRangeSet
@@ -162,12 +160,12 @@ class CostGuidedEvaluator:
                     self.eval_step(node.lhs)
 
             case Lookup():
-                LOGGER.debug(f'Starting lookup for {len(node.atoms)} features.')
+                LOGGER.debug('Starting lookup for %d features.', len(node.atoms))
                 min_off = min(atom.relative_position for atom in node.atoms)
                 max_off = max(atom.relative_position for atom in node.atoms)
                 lookup_positions = self.lookup_strategy.perform_lookup(node, offset=min_off)
                 node.value = BucketRangeSet({max_off - min_off: lookup_positions})
-                LOGGER.debug(f'Lookup finished.')
+                LOGGER.debug('Lookup finished.')
 
             case _:
                 raise NotImplementedError()

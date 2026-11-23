@@ -71,7 +71,7 @@ class Index:
         if self.smallsets:
             try:
                 search_key = self.get_smallset_searchkey()
-                error = (start_key == end_key)
+                error = start_key == end_key
                 start, end = binsearch_range(0, len(self.smallsets) - 1, start_key, end_key, search_key, error=error)
                 if 0 <= start <= end < len(self.smallsets):
                     data = self.smallsets[start:end + 1]
