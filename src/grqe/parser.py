@@ -1,5 +1,3 @@
-from typing import Type
-
 from lark import Lark
 from lark.exceptions import LarkError
 
@@ -16,8 +14,10 @@ GRAMMAR = """
               | "[" atom* "]"           -> lookup
               | "<" KEY span_atom* ">"  -> span_lookup
     
-    atom: KEY "@" OFFSET "=" STRING 
-    span_atom: KEY "=" STRING
+    atom: KEY "@" OFFSET EQ STRING 
+    span_atom: KEY EQ STRING
+    
+    EQ:         "=" | "~="
 
     KEY:        LETTER (LETTER | DIGIT)*
     OPERATOR:   LOWER (LOWER | DIGIT)*
@@ -62,7 +62,7 @@ class ArityException(ParseException):
 
 
 class Transform:
-    constructors: ClassVar[dict[str, Type[Node]]] = {
+    constructors: ClassVar[dict[str, type[Node]]] = {
         'con': Conjunction,
         'dis': Disjunction,
         'seq': Sequence,
@@ -132,12 +132,12 @@ class Transform:
         raise NotImplementedError()
 
     def atom(self, t) -> Atom:
-        key, offset, value = t.children
-        return Atom(int(offset), key, value[1:-1])
+        key, offset, eq, value = t.children
+        return Atom(int(offset), key, value[1:-1], eq == '~=')
 
     def span_atom(self, t) -> SpanAtom:
-        key, value = t.children
-        return SpanAtom(key, value[1:-1])
+        key, eq, value = t.children
+        return SpanAtom(key, value[1:-1], eq == '~=')
 
 
 def parse(s: str) -> Node:
