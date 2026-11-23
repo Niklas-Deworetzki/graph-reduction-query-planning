@@ -1,7 +1,7 @@
 from lark import Lark, Token, Tree
 from lark.exceptions import LarkError
 
-from grqe import regexes
+from grqe import regex_support
 from grqe.query import *
 
 GRAMMAR = """
@@ -100,7 +100,7 @@ def convert(query: Parsed) -> Node:
 
 def from_literal(value: str) -> tuple[str, bool]:
     value = value[1:-1]
-    return str(value), not regexes.is_literal(value)
+    return str(value), not regex_support.is_literal(value)
 
 def to_atom(attribute: Parsed) -> tuple[bool, Atom]:
     key, op, literal = attribute.children
